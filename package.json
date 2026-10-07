@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "render": "node src/render.js",
-    "test": "node --test tests/*.test.js tests/worker/*.test.js",
+    "test": "node --test tests/*.test.js tests/worker/*.test.js tests/adapters/*.test.js",
     "test:unit": "node --test tests/document.test.js",
     "test:integration": "node --test tests/render.test.js",
     "test:worker": "node --test tests/worker/*.test.js",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@fontsource/inter": "^5.2.6",
     "@fontsource/lora": "^5.2.7",
+    "googleapis": "183.0.0",
     "image-size": "^2.0.2",
     "pdf-lib": "^1.17.1",
     "playwright": "^1.55.0"
