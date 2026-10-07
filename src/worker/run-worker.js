@@ -57,9 +57,21 @@ async function runWorker({ ports, clock, createWorkerId }) {
     return draftOut;
   } catch (error) {
     const safeError = error instanceof WorkerError ? error : new WorkerError("external", "unknown", error.message, error);
+    console.error(
+      `[worker] stage=${activeStage} outcome=failed type=${safeError.type} code=${safeError.code} ` +
+      `thrown=${error?.constructor?.name ?? typeof error} message=${redactForLog(error?.message)}`
+    );
     await handleFailure(activeJob, activeStage, safeError, ports);
     return { outcome: "failed", error: safeError.code };
   }
+}
+
+function redactForLog(message) {
+  return String(message ?? "")
+    .replace(/https?:\/\/[^\s"']+/g, "[url]")
+    .replace(/ya29\.[A-Za-z0-9-_]+/g, "[token]")
+    .replace(/-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----/g, "[key]")
+    .slice(0, 500);
 }
 
 async function handleRenderStage(job, now, workerId, ports) {
