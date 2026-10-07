@@ -81,8 +81,10 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
     try {
       record = await client.api.resource(manifestPublicId(runKey));
     } catch (error) {
-      if (error?.http_code === 404) return null;
-      throw error;
+      const code = error?.error?.http_code ?? error?.http_code ?? error?.statusCode ?? error?.status;
+      if (code === 404) return null;
+      const message = error?.error?.message ?? error?.message ?? String(error);
+      throw new WorkerError("external", "cloudinary_error", `Cloudinary findManifest failed: ${message}`, error);
     }
     const manifest = await loadJson(record.secure_url);
     validateStoredManifest(manifest);
