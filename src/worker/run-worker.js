@@ -25,6 +25,8 @@ async function runWorker({ ports, clock, createWorkerId }) {
     return { outcome: "idle" };
   }
 
+  let activeJob = eligibleJob;
+  let activeStage = stage;
   try {
     const claimed = claimJob(eligibleJob, stage, now, workerId);
     await JobQueue.persistClaim(eligibleJob.rowId, {
@@ -35,15 +37,27 @@ async function runWorker({ ports, clock, createWorkerId }) {
       workerId: claimed.workerId,
       error: ""
     });
+    activeJob = claimed;
 
     if (stage === "render") {
-      return await handleRenderStage(claimed, now, workerId, ports);
-    } else {
-      return await handleDraftStage(claimed, now, workerId, ports);
+      const renderOut = await handleRenderStage(claimed, now, workerId, ports);
+      const forDraft = {
+        ...claimed,
+        status: "render_created",
+        renderManifest: renderOut.manifest.locator,
+        workerId: "",
+        lockedAt: ""
+      };
+      activeJob = forDraft;
+      activeStage = "draft";
+      const draftOut = await handleDraftStage(forDraft, now, workerId, ports, (j) => { activeJob = j; });
+      return { ...draftOut, manifest: renderOut.manifest };
     }
+    const draftOut = await handleDraftStage(claimed, now, workerId, ports, (j) => { activeJob = j; });
+    return draftOut;
   } catch (error) {
     const safeError = error instanceof WorkerError ? error : new WorkerError("external", "unknown", error.message, error);
-    await handleFailure(eligibleJob, stage, safeError, ports);
+    await handleFailure(activeJob, activeStage, safeError, ports);
     return { outcome: "failed", error: safeError.code };
   }
 }
@@ -123,9 +137,10 @@ async function handleRenderStage(job, now, workerId, ports) {
   }
 }
 
-async function handleDraftStage(job, now, workerId, ports) {
+async function handleDraftStage(job, now, workerId, ports, onClaimed) {
   const { JobQueue, AssetStore, DraftService } = ports;
 
+  let draftJob = job;
   if (job.status !== "drafting") {
     const draftClaimed = claimJob(job, "draft", now, workerId);
     await JobQueue.persistClaim(job.rowId, {
@@ -136,14 +151,25 @@ async function handleDraftStage(job, now, workerId, ports) {
       workerId: draftClaimed.workerId,
       error: ""
     });
+    draftJob = draftClaimed;
+    if (onClaimed) onClaimed(draftClaimed);
   }
 
-  const manifest = await AssetStore.loadManifest(job.renderManifest);
-  validateStoredManifest(manifest);
+  let manifest = null;
+  try {
+    manifest = await AssetStore.loadManifest(draftJob.renderManifest);
+  } catch (error) {
+    throw error;
+  }
+  try {
+    validateStoredManifest(manifest);
+  } catch (error) {
+    throw new WorkerError("data_integrity", "invalid_render_manifest", "Stored render manifest is missing or invalid");
+  }
 
-  const existingDraft = await DraftService.findDraft({ runKey: manifest.runKey, storedDraftId: job.bufferDraftId });
+  const existingDraft = await DraftService.findDraft({ runKey: manifest.runKey, storedDraftId: draftJob.bufferDraftId });
   if (existingDraft) {
-    await JobQueue.persistState(job.rowId, {
+    await JobQueue.persistState(draftJob.rowId, {
       status: "draft_created",
       bufferDraftId: existingDraft.id,
       bufferDraftUrl: existingDraft.url,
@@ -151,18 +177,18 @@ async function handleDraftStage(job, now, workerId, ports) {
       lockedAt: "",
       error: ""
     });
-    return { outcome: "draft_created", draft: existingDraft };
+    return { outcome: "draft_created", draft: existingDraft, manifest };
   }
 
   try {
     const pdfFile = manifest.files.pdf;
     const draft = await DraftService.createDraft({
       runKey: manifest.runKey,
-      caption: job.postText,
+      caption: draftJob.postText,
       pdfUrl: pdfFile.url
     });
 
-    await JobQueue.persistState(job.rowId, {
+    await JobQueue.persistState(draftJob.rowId, {
       status: "draft_created",
       bufferDraftId: draft.id,
       bufferDraftUrl: draft.url,
@@ -171,7 +197,7 @@ async function handleDraftStage(job, now, workerId, ports) {
       error: ""
     });
 
-    return { outcome: "draft_created", draft };
+    return { outcome: "draft_created", draft, manifest };
   } catch (error) {
     if (error instanceof WorkerError && error.type === "ambiguous") {
       throw error;

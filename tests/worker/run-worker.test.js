@@ -61,11 +61,15 @@ test("claims exactly one eligible job", async () => {
     createWorkerId: () => "worker-test"
   });
 
-  assert.equal(queue.calls.persistClaim, 1);
+  assert.equal(queue.calls.persistClaim, 2);
   const claimedJob = queue.getJob("Sheet1!2");
-  assert.equal(claimedJob.status, "render_created");
+  assert.equal(claimedJob.status, "draft_created");
   assert.equal(claimedJob.renderAttempts, 1);
+  assert.equal(claimedJob.draftAttempts, 1);
   assert.equal(claimedJob.workerId, "");
+  const untouchedJob = queue.getJob("Sheet1!3");
+  assert.equal(untouchedJob.status, "carousel_created");
+  assert.equal(untouchedJob.renderAttempts, 0);
 });
 
 test("persistClaim occurs before download", async () => {
@@ -179,19 +183,23 @@ test("valid payload renders and creates manifest", async () => {
     createWorkerId: () => "worker-test"
   });
 
-  assert.equal(result.outcome, "render_created");
+  assert.equal(result.outcome, "draft_created");
   assert.equal(queue.calls.findEligible, 1);
-  assert.equal(queue.calls.persistClaim, 1);
+  assert.equal(queue.calls.persistClaim, 2);
   assert.equal(payload.calls.download, 1);
   assert.equal(renderer.calls.render, 1);
   assert.equal(assets.calls.findManifest, 1);
   assert.equal(assets.calls.store, 1);
-  assert.equal(queue.calls.persistState, 1);
-  
+  assert.equal(queue.calls.persistState, 2);
+  assert.equal(drafts.calls.findDraft, 1);
+  assert.equal(drafts.calls.createDraft, 1);
+
   const updated = queue.getJob("Sheet1!2");
-  assert.equal(updated.status, "render_created");
+  assert.equal(updated.status, "draft_created");
   assert.ok(updated.renderManifest.startsWith("cloudinary://"));
   assert.ok(updated.renderManifest.includes("test-001:"));
+  assert.ok(updated.bufferDraftId.length > 0);
+  assert.ok(updated.bufferDraftUrl.startsWith("https://buffer.com/draft/"));
 });
 
 test("renderer receives unique isolated paths", async () => {
@@ -257,14 +265,16 @@ test("existing manifest skips renderer and upload", async () => {
     createWorkerId: () => "worker-test"
   });
 
-  assert.equal(result.outcome, "render_created");
+  assert.equal(result.outcome, "draft_created");
   assert.equal(renderer.calls.render, 0);
   assert.equal(assets.calls.store, 0);
   assert.equal(assets.calls.findManifest, 1);
-  
+  assert.equal(drafts.calls.createDraft, 1);
+
   const updated = queue.getJob("Sheet1!2");
-  assert.equal(updated.status, "render_created");
+  assert.equal(updated.status, "draft_created");
   assert.equal(updated.renderManifest, existingManifest.locator);
+  assert.ok(updated.bufferDraftId.length > 0);
 });
 
 test("partial assets with matching digest and size are reused", async () => {
@@ -300,7 +310,7 @@ test("partial assets with matching digest and size are reused", async () => {
     clock: createTestClock(),
     createWorkerId: () => "worker-test-1"
   });
-  assert.equal(result1.outcome, "render_created");
+  assert.equal(result1.outcome, "draft_created");
 
   // Phase 2: new store holding only partial assets (no manifest), digests match.
   const assets2 = createFakeAssetStore();
@@ -316,7 +326,7 @@ test("partial assets with matching digest and size are reused", async () => {
     createWorkerId: () => "worker-test-2"
   });
 
-  assert.equal(result2.outcome, "render_created");
+  assert.equal(result2.outcome, "draft_created");
   assert.equal(calls2.count, 1);
   assert.equal(result2.manifest.files.pdf.url, result1.manifest.files.pdf.url);
   assert.equal(result2.manifest.files.cover.url, result1.manifest.files.cover.url);
@@ -382,4 +392,237 @@ test("repeating same payload returns same run key", async () => {
   assert.ok(result2.manifest);
   assert.equal(result1.manifest.runKey, result2.manifest.runKey);
   assert.equal(renderer2.calls.render, 0);
+});
+
+async function buildStoredManifest(jobId, payloadBytes, pdfUrl = "https://cloudinary.com/test-pdf") {
+  const { createManifestDraft } = await import("../../src/worker/manifest.js");
+  const draft = await createManifestDraft({
+    jobId,
+    payloadBytes,
+    outputs: {
+      pdf: { name: "carousel.pdf", bytes: Buffer.from("pdf-bytes") },
+      cover: { name: "cover.jpg", bytes: Buffer.from("cover-bytes") },
+      slides: Array.from({ length: 8 }, (_, i) => ({ name: `slide-${String(i + 1).padStart(2, "0")}.png`, bytes: Buffer.from(`slide-${i}-bytes`) }))
+    },
+    now: new Date("2026-10-07T12:00:00.000Z")
+  });
+  draft.files.pdf.url = pdfUrl;
+  draft.files.cover.url = "https://cloudinary.com/test-cover";
+  draft.files.slides.forEach((s, i) => { s.url = `https://cloudinary.com/test-slide${i}`; });
+  const locator = `cloudinary://${draft.runKey}`;
+  return { manifest: { ...draft, locator }, locator };
+}
+
+function makeDraftOnlyJob(overrides = {}) {
+  return {
+    jobId: "test-001",
+    rowId: "Sheet1!2",
+    status: "render_created",
+    carouselFile: "https://drive.google.com/test-001-carousel-v1.json",
+    renderAttempts: 1,
+    draftAttempts: 0,
+    lockedAt: "",
+    workerId: "",
+    renderManifest: "",
+    bufferDraftId: "",
+    bufferDraftUrl: "",
+    error: "",
+    updatedAt: new Date().toISOString(),
+    postText: "exact unmodified post text",
+    ...overrides
+  };
+}
+
+test("fresh render persists render_created then drafting claim before any Buffer call", async () => {
+  const job = { ...makeDraftOnlyJob(), status: "carousel_created", renderAttempts: 0, renderManifest: "" };
+  const queue = createFakeQueue([job]);
+  const payload = createFakePayloadStore(new Map([["test-001-carousel-v1.json", { bytes: driveBytesTest001 }]]));
+  const renderer = createFakeRenderer(renderCarousel);
+  const assets = createFakeAssetStore();
+  const drafts = createFakeDraftService();
+
+  const states = [];
+  const originalPersistState = queue.persistState.bind(queue);
+  queue.persistState = async (rowId, updates) => {
+    if (updates.status) states.push(updates.status);
+    return originalPersistState(rowId, updates);
+  };
+  let claimsAtFirstBufferCall = -1;
+  const originalFindDraft = drafts.findDraft.bind(drafts);
+  drafts.findDraft = async (...args) => {
+    if (claimsAtFirstBufferCall === -1) claimsAtFirstBufferCall = queue.calls.persistClaim;
+    return originalFindDraft(...args);
+  };
+
+  const clock = createTestClock();
+  const result = await runWorker({
+    ports: makePorts({ queue, payload, renderer, assets, drafts }),
+    clock,
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "draft_created");
+  assert.deepEqual(states, ["render_created", "draft_created"]);
+  assert.equal(queue.calls.persistClaim, 2);
+  assert.equal(claimsAtFirstBufferCall, 2);
+  assert.equal(drafts.calls.createDraft, 1);
+});
+
+test("draft-only job claims once without double increment", async () => {
+  const { locator } = await buildStoredManifest("test-001", driveBytesTest001);
+  const job = makeDraftOnlyJob({ renderManifest: locator });
+  const assets = createFakeAssetStore();
+  const { manifest } = await buildStoredManifest("test-001", driveBytesTest001);
+  assets.addManifest(manifest.runKey, manifest);
+
+  const queue = createFakeQueue([job]);
+  const payload = createFakePayloadStore();
+  const renderer = createFakeRenderer(renderCarousel);
+  const drafts = createFakeDraftService();
+  const clock = createTestClock();
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload, renderer, assets, drafts }),
+    clock,
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "draft_created");
+  assert.equal(queue.calls.persistClaim, 1);
+  assert.equal(payload.calls.download, 0);
+  assert.equal(renderer.calls.render, 0);
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.draftAttempts, 1);
+  assert.equal(updated.renderAttempts, 1);
+  assert.equal(updated.status, "draft_created");
+});
+
+test("invalid stored manifest becomes terminal draft_failed with no Buffer call", async () => {
+  const job = makeDraftOnlyJob({ renderManifest: "cloudinary://missing-manifest" });
+  const queue = createFakeQueue([job]);
+  const assets = createFakeAssetStore();
+  const drafts = createFakeDraftService();
+  const clock = createTestClock();
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts }),
+    clock,
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(drafts.calls.findDraft, 0);
+  assert.equal(drafts.calls.createDraft, 0);
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "draft_failed");
+  assert.ok(updated.error.includes("invalid_render_manifest"));
+});
+
+test("malformed stored manifest becomes terminal draft_failed", async () => {
+  const assets = createFakeAssetStore();
+  assets.addManifest("bogus-key", { garbage: true });
+  const job = makeDraftOnlyJob({ renderManifest: "cloudinary://bogus-key" });
+  const queue = createFakeQueue([job]);
+  const drafts = createFakeDraftService();
+
+  await runWorker({
+    ports: makePorts({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test"
+  });
+
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "draft_failed");
+  assert.ok(updated.error.includes("invalid_render_manifest"));
+  assert.equal(drafts.calls.createDraft, 0);
+});
+
+test("stored draft id is reconciled first", async () => {
+  const { manifest, locator } = await buildStoredManifest("test-001", driveBytesTest001);
+  const assets = createFakeAssetStore();
+  assets.addManifest(manifest.runKey, manifest);
+  const drafts = createFakeDraftService();
+  drafts.addDraft({ id: "stored-d1", url: "https://buffer.com/draft/stored-d1", runKey: "some-other-run-key", caption: "old", pdfUrl: "old" });
+
+  const job = makeDraftOnlyJob({ renderManifest: locator, bufferDraftId: "stored-d1" });
+  const queue = createFakeQueue([job]);
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "draft_created");
+  assert.equal(drafts.calls.createDraft, 0);
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.bufferDraftId, "stored-d1");
+  assert.equal(updated.bufferDraftUrl, "https://buffer.com/draft/stored-d1");
+});
+
+test("existing draft by run key is reused", async () => {
+  const { manifest, locator } = await buildStoredManifest("test-001", driveBytesTest001);
+  const assets = createFakeAssetStore();
+  assets.addManifest(manifest.runKey, manifest);
+  const drafts = createFakeDraftService();
+  drafts.addDraft({ id: "runkey-d1", url: "https://buffer.com/draft/runkey-d1", runKey: manifest.runKey, caption: "old", pdfUrl: "old" });
+
+  const job = makeDraftOnlyJob({ renderManifest: locator });
+  const queue = createFakeQueue([job]);
+
+  await runWorker({
+    ports: makePorts({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(drafts.calls.createDraft, 0);
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "draft_created");
+  assert.equal(updated.bufferDraftId, "runkey-d1");
+});
+
+test("missing draft is created once with exact postText and verified pdf url", async () => {
+  const { manifest, locator } = await buildStoredManifest("test-001", driveBytesTest001, "https://cloudinary.com/verified-pdf");
+  const assets = createFakeAssetStore();
+  assets.addManifest(manifest.runKey, manifest);
+  const drafts = createFakeDraftService();
+
+  const job = makeDraftOnlyJob({ renderManifest: locator, postText: "word-for-word caption" });
+  const queue = createFakeQueue([job]);
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "draft_created");
+  assert.equal(drafts.calls.createDraft, 1);
+  assert.equal(drafts.lastCreate.caption, "word-for-word caption");
+  assert.equal(drafts.lastCreate.pdfUrl, "https://cloudinary.com/verified-pdf");
+  assert.equal(drafts.lastCreate.runKey, manifest.runKey);
+});
+
+test("ambiguous create enters draft_retry without a second create call", async () => {
+  const { manifest, locator } = await buildStoredManifest("test-001", driveBytesTest001);
+  const assets = createFakeAssetStore();
+  assets.addManifest(manifest.runKey, manifest);
+  const drafts = createFakeDraftService();
+  drafts.ambiguousOnCreate = true;
+
+  const job = makeDraftOnlyJob({ renderManifest: locator });
+  const queue = createFakeQueue([job]);
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(drafts.calls.createDraft, 1);
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "draft_retry");
+  assert.ok(updated.error.includes("buffer_ambiguous"));
 });

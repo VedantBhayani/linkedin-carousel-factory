@@ -85,7 +85,7 @@ export function createFakeRenderer(renderFn) {
   };
 }
 
-import { WorkerError } from "../../src/worker/errors.js";
+import { WorkerError, AmbiguousExternalError } from "../../src/worker/errors.js";
 
 export function createFakeAssetStore(manifests = new Map(), partials = new Map()) {
   const calls = { findManifest: 0, store: 0, loadManifest: 0 };
@@ -141,8 +141,10 @@ export function createFakeAssetStore(manifests = new Map(), partials = new Map()
 
 export function createFakeDraftService(drafts = new Map()) {
   const calls = { findDraft: 0, createDraft: 0 };
-  return {
+  const service = {
     calls,
+    lastCreate: null,
+    ambiguousOnCreate: false,
     async findDraft({ runKey, storedDraftId }) {
       calls.findDraft++;
       if (storedDraftId && drafts.has(storedDraftId)) {
@@ -155,6 +157,11 @@ export function createFakeDraftService(drafts = new Map()) {
     },
     async createDraft({ runKey, caption, pdfUrl }) {
       calls.createDraft++;
+      service.lastCreate = { runKey, caption, pdfUrl };
+      if (service.ambiguousOnCreate) {
+        service.ambiguousOnCreate = false;
+        throw new AmbiguousExternalError("buffer_ambiguous", "Buffer create outcome unknown");
+      }
       const id = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const draft = { id, url: `https://buffer.com/draft/${id}`, runKey, caption, pdfUrl };
       drafts.set(id, draft);
@@ -164,6 +171,7 @@ export function createFakeDraftService(drafts = new Map()) {
       drafts.set(draft.id, draft);
     }
   };
+  return service;
 }
 
 export function createTestClock(start = new Date("2026-10-07T12:00:00.000Z")) {
