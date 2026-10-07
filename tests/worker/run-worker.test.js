@@ -629,6 +629,28 @@ test("ambiguous create enters draft_retry without a second create call", async (
   assert.ok(updated.error.includes("buffer_ambiguous"));
 });
 
+test("typed draft creation failures preserve the adapter error details", async () => {
+  const { manifest, locator } = await buildStoredManifest("test-001", driveBytesTest001);
+  const assets = createFakeAssetStore();
+  assets.addManifest(manifest.runKey, manifest);
+  const drafts = createFakeDraftService();
+  drafts.createError = new WorkerError("external", "buffer_http_error", "Buffer HTTP 401");
+
+  const job = makeDraftOnlyJob({ renderManifest: locator });
+  const queue = createFakeQueue([job]);
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.deepEqual(result, { outcome: "failed", error: "buffer_http_error" });
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "draft_retry");
+  assert.equal(updated.error, "external:buffer_http_error Buffer HTTP 401");
+});
+
 async function runWorkerOnce({ queue, payload, renderer, assets, drafts }) {
   return runWorker({
     ports: makePorts({ queue, payload, renderer, assets, drafts }),

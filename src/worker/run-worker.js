@@ -229,10 +229,10 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
 
     return { outcome: "draft_created", draft, manifest };
   } catch (error) {
-    if (error instanceof WorkerError && error.type === "ambiguous") {
+    if (error instanceof WorkerError) {
       throw error;
     }
-    throw new WorkerError("external", "buffer_create_failed", "Failed to create Buffer draft");
+    throw new WorkerError("external", "buffer_create_failed", "Failed to create Buffer draft", error);
   }
 }
 
