@@ -62,7 +62,7 @@ export function createFakePayloadStore(files = new Map()) {
     calls,
     async download(carouselFile) {
       calls.download++;
-      const match = carouselFile.match(/\/([^/]+-carousel-v1\.json)$/);
+      const match = carouselFile.match(/\/([^/]+\.json)$/);
       const fileName = match ? match[1] : "unknown.json";
       const entry = files.get(fileName);
       if (!entry) throw new Error(`File not found: ${fileName}`);
