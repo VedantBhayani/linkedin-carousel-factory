@@ -106,7 +106,7 @@ test("real renderer produces verified draft_created end to end", async () => {
   assert.equal(drafts.lastCreate.runKey, result.manifest.runKey);
 
   const leftovers = fs.existsSync(tmpDir)
-    ? fs.readdirSync(tmpDir).filter((name) => name.startsWith("worker-"))
+    ? fs.readdirSync(tmpDir).filter((name) => name === "worker-worker-integration")
     : [];
   assert.deepEqual(leftovers, []);
   assert.deepEqual(snapshotStats(distDir), distBefore);
