@@ -2,8 +2,6 @@ name: Render LinkedIn Carousel
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
 
 concurrency:
   group: carousel-production-worker
