@@ -16,6 +16,7 @@ const dist = process.env.CAROUSEL_DIST
 const fixturePath = path.join(root, "input", "carousel.json");
 
 function snapshotStats(dir) {
+  if (!fs.existsSync(dir)) return {};
   const files = fs.readdirSync(dir).filter((name) => /^(carousel\.html|carousel\.pdf|cover\.jpg|slide-\d{2}\.png)$/.test(name));
   const stats = {};
   for (const name of files) {
