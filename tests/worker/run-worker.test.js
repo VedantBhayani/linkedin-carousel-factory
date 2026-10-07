@@ -602,6 +602,7 @@ test("missing draft is created once with exact postText and verified pdf url", a
   assert.equal(drafts.calls.createDraft, 1);
   assert.equal(drafts.lastCreate.caption, "word-for-word caption");
   assert.equal(drafts.lastCreate.pdfUrl, "https://cloudinary.com/verified-pdf");
+  assert.equal(drafts.lastCreate.coverUrl, "https://cloudinary.com/test-cover");
   assert.equal(drafts.lastCreate.runKey, manifest.runKey);
 });
 

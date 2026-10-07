@@ -182,10 +182,12 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
 
   try {
     const pdfFile = manifest.files.pdf;
+    const coverFile = manifest.files.cover;
     const draft = await DraftService.createDraft({
       runKey: manifest.runKey,
       caption: draftJob.postText,
-      pdfUrl: pdfFile.url
+      pdfUrl: pdfFile.url,
+      coverUrl: coverFile.url
     });
 
     await JobQueue.persistState(draftJob.rowId, {

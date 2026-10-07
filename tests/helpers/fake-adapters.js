@@ -156,9 +156,9 @@ export function createFakeDraftService(drafts = new Map()) {
       }
       return null;
     },
-    async createDraft({ runKey, caption, pdfUrl }) {
+    async createDraft({ runKey, caption, pdfUrl, coverUrl }) {
       calls.createDraft++;
-      service.lastCreate = { runKey, caption, pdfUrl };
+      service.lastCreate = { runKey, caption, pdfUrl, coverUrl };
       if (service.ambiguousOnCreate) {
         service.ambiguousOnCreate = false;
         throw new AmbiguousExternalError("buffer_ambiguous", "Buffer create outcome unknown");
