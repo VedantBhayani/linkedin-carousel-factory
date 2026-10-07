@@ -1,0 +1,77 @@
+{
+  "jobId": "launch-video-001",
+  "title": "Make People Care Before You Explain",
+  "style": {
+    "family": "dark-editorial",
+    "accent": "electric-blue",
+    "density": "low"
+  },
+  "referenceCollection": "dark-editorial",
+  "slides": [
+    {
+      "layout": "editorial-hook",
+      "headline": "Your launch video shouldn't explain your product.",
+      "accentText": "Give people a reason to care."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "The same launch. On repeat.",
+      "items": [
+        "Explain the product",
+        "Walk through the features",
+        "Show the interface",
+        "Explain how it works"
+      ],
+      "footer": "Plenty of information. No reason to care."
+    },
+    {
+      "layout": "statement",
+      "headline": "Existence doesn't create interest.",
+      "body": "People care when they recognize a problem they want solved. Start with the frustration in their world."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "Sell the problem first.",
+      "items": [
+        "Show the frustration customers live with",
+        "Show life when that problem is solved",
+        "Show why this product needed to exist"
+      ],
+      "footer": "The product becomes interesting when its impact becomes clear."
+    },
+    {
+      "layout": "comparison",
+      "leftTitle": "Product demo",
+      "leftBody": "Explains the mechanics: features, screens and workflows.",
+      "rightTitle": "Launch video",
+      "rightBody": "Creates desire and curiosity about the change the product makes.",
+      "footer": "Give people a reason to take the next step. Let the demo handle the details."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "Why does every launch look the same?",
+      "items": [
+        "Dark backgrounds",
+        "Floating UI",
+        "Feature lists",
+        "Dramatic music"
+      ],
+      "footer": "Different products, founders and problems. The same creative direction."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "Let your story shape the launch.",
+      "items": [
+        "The problem you're solving",
+        "The people you're solving it for",
+        "The founder's reason for building it",
+        "The change you want to create"
+      ]
+    },
+    {
+      "layout": "closing",
+      "headline": "Create curiosity.",
+      "body": "The demo explains how it works. The launch makes people care enough to find out."
+    }
+  ]
+}

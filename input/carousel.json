@@ -1,0 +1,76 @@
+{
+  "title": "Your launch video shouldn't explain your product",
+  "caption": "Your launch video shouldn't explain your product first. It should make people care first.",
+  "style": {
+    "family": "dark-editorial",
+    "accent": "electric-blue",
+    "density": "low"
+  },
+  "slides": [
+    {
+      "layout": "editorial-hook",
+      "headline": "Your launch video shouldn't explain your product.",
+      "accentText": "It should make people care first."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "Most startup launch videos follow the same pattern:",
+      "items": [
+        "Explain the product",
+        "Walk through the features",
+        "Show the interface",
+        "Tell you how it works"
+      ],
+      "footer": "And they miss the part that matters most."
+    },
+    {
+      "layout": "statement",
+      "headline": "People don't care because your product exists.",
+      "body": "They care because there's a problem in their world they want solved."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "Sell the problem before the product.",
+      "items": [
+        "Show the frustration your customer lives with",
+        "Show what changes when the problem is solved",
+        "Show why this product needed to exist"
+      ],
+      "footer": "The product becomes interesting when people understand what it changes."
+    },
+    {
+      "layout": "comparison",
+      "leftTitle": "Product demo",
+      "leftBody": "Explains how the product works.",
+      "rightTitle": "Launch video",
+      "rightBody": "Makes people want to understand it.",
+      "footer": "Those are two completely different jobs."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "Stop making every launch look like a SaaS launch.",
+      "items": [
+        "The same dark backgrounds",
+        "The same floating UI",
+        "The same feature list",
+        "The same dramatic music"
+      ],
+      "footer": "Different products. Different founders. Same creative direction."
+    },
+    {
+      "layout": "framework-overview",
+      "title": "Your launch should reflect:",
+      "items": [
+        "The problem you're solving",
+        "The people you're solving it for",
+        "The founder's reason for building it",
+        "The change you want to create"
+      ]
+    },
+    {
+      "layout": "closing",
+      "headline": "A launch video should create curiosity.",
+      "body": "Let the demo explain the mechanics. Let the launch make people care."
+    }
+  ]
+}

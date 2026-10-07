@@ -1,0 +1,40 @@
+name: Render LinkedIn Carousel
+
+on:
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: linkedin-carousel
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: linkedin-carousel/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Test and render
+        run: npm test
+
+      - name: Upload carousel
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkedin-carousel
+          path: |
+            linkedin-carousel/dist/carousel.html
+            linkedin-carousel/dist/carousel.pdf
+            linkedin-carousel/dist/cover.jpg
+            linkedin-carousel/dist/slide-*.png
