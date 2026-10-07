@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadProductionConfig, createProductionRunner } from "../../src/worker/production.js";
+import { loadProductionConfig, createProductionRunner, resolveStartupMode } from "../../src/worker/production.js";
 import { WorkerError } from "../../src/worker/errors.js";
 
 const FULL_ENV = {
@@ -49,4 +49,12 @@ test("loadProductionConfig honors SHEET_NAME overrides", () => {
 test("createProductionRunner composes all five adapters without network calls", () => {
   const run = createProductionRunner(loadProductionConfig({ ...FULL_ENV }));
   assert.equal(typeof run, "function");
+});
+
+test("resolveStartupMode skips when no production variables are set", () => {
+  assert.deepEqual(resolveStartupMode({}), { mode: "skip" });
+});
+
+test("resolveStartupMode runs when any production variable is set", () => {
+  assert.deepEqual(resolveStartupMode({ GOOGLE_SERVICE_ACCOUNT_JSON: "x" }), { mode: "run" });
 });

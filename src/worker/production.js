@@ -71,8 +71,17 @@ export function createProductionRunner(config) {
   });
 }
 
+export function resolveStartupMode(env = process.env) {
+  const anySet = REQUIRED_ENV.some((key) => env[key]);
+  return anySet ? { mode: "run" } : { mode: "skip" };
+}
+
 async function main() {
   try {
+    if (resolveStartupMode().mode === "skip") {
+      console.log("Production is not configured, skipping worker run.");
+      return;
+    }
     const run = createProductionRunner(loadProductionConfig());
     const result = await run();
     console.log(JSON.stringify({ outcome: result.outcome, error: result.error ?? null }));
