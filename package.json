@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "render": "node src/render.js",
+    "worker": "node src/worker/production.js",
     "test": "node --test tests/*.test.js tests/worker/*.test.js tests/adapters/*.test.js",
     "test:unit": "node --test tests/document.test.js",
     "test:integration": "node --test tests/render.test.js",

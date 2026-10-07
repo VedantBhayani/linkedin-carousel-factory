@@ -2,6 +2,12 @@ name: Render LinkedIn Carousel
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+concurrency:
+  group: carousel-production-worker
+  cancel-in-progress: false
 
 jobs:
   render:
@@ -25,3 +31,16 @@ jobs:
 
       - name: Test and render
         run: npm test
+
+      - name: Run production worker
+        if: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON != '' }}
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_SPREADSHEET_ID: ${{ secrets.SHEET_SPREADSHEET_ID }}
+          SHEET_NAME: Sheet1
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
+          BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
+        run: npm run worker
