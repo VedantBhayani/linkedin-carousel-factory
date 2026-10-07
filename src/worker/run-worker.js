@@ -59,15 +59,31 @@ async function runWorker({ ports, clock, createWorkerId }) {
     const safeError = error instanceof WorkerError ? error : new WorkerError("external", "unknown", error.message, error);
     console.error(
       `[worker] stage=${activeStage} outcome=failed type=${safeError.type} code=${safeError.code} ` +
-      `thrown=${error?.constructor?.name ?? typeof error} message=${redactForLog(error?.message)}`
+      `thrown=${error?.constructor?.name ?? typeof error} message=${redactForLog(error?.message)} ` +
+      `shape=${redactForLog(safeStringify(error))}`
     );
     await handleFailure(activeJob, activeStage, safeError, ports);
     return { outcome: "failed", error: safeError.code };
   }
 }
 
-function redactForLog(message) {
-  return String(message ?? "")
+function safeStringify(value) {
+  try {
+    const seen = new Set();
+    return JSON.stringify(value, (key, val) => {
+      if (key === "private_key") return "[key]";
+      if (val && typeof val === "object") {
+        if (seen.has(val)) return "[circular]";
+        seen.add(val);
+      }
+      return val;
+    });
+  } catch {
+    return String(value);
+  }
+}
+
+function redactForLog(message) {  return String(message ?? "")
     .replace(/https?:\/\/[^\s"']+/g, "[url]")
     .replace(/ya29\.[A-Za-z0-9-_]+/g, "[token]")
     .replace(/-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----/g, "[key]")
