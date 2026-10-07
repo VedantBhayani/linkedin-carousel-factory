@@ -8,7 +8,7 @@ import { createCloudinaryAssetStore } from "../../src/adapters/cloudinary-assets
 import { WorkerError } from "../../src/worker/errors.js";
 
 function makeCloudinary() {
-  const calls = { upload: 0, resource: 0 };
+  const calls = { upload: 0, resource: 0, resourceOptions: [] };
   const objects = new Map();
   const api = {
     calls,
@@ -36,8 +36,9 @@ function makeCloudinary() {
       }
     },
     api: {
-      async resource(publicId) {
+      async resource(publicId, options) {
         calls.resource++;
+        calls.resourceOptions.push({ publicId, options });
         const found = objects.get(publicId);
         if (!found) {
           const error = new Error("not found");
@@ -147,6 +148,14 @@ test("store reuses byte-identical remote assets without re-uploading", async () 
     secondResult.manifest.files.slides.map((s) => s.url),
     firstResult.manifest.files.slides.map((s) => s.url)
   );
+  const rawLookups = cloudinary.calls.resourceOptions.filter(({ publicId }) =>
+    publicId.endsWith("/carousel") || publicId.endsWith("/carousel-manifest"));
+  const imageLookups = cloudinary.calls.resourceOptions.filter(({ publicId }) =>
+    publicId.endsWith("/cover") || /\/slide-\d{2}$/.test(publicId));
+  assert.ok(rawLookups.length >= 2);
+  assert.ok(rawLookups.every(({ options }) => options.resource_type === "raw" && options.type === "upload"));
+  assert.equal(imageLookups.length, 9);
+  assert.ok(imageLookups.every(({ options }) => options.resource_type === "image" && options.type === "upload"));
   fs.rmSync(second.dir, { recursive: true, force: true });
 });
 
@@ -192,6 +201,8 @@ test("loadManifest reloads a stored manifest by locator", async () => {
   const reloaded = await store.loadManifest(stored.locator);
   assert.equal(reloaded.runKey, runKey);
   assert.equal(reloaded.files.slides.length, 8);
+  assert.equal(cloudinary.calls.resourceOptions.at(-1).options.resource_type, "raw");
+  assert.equal(cloudinary.calls.resourceOptions.at(-1).options.type, "upload");
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

@@ -70,7 +70,10 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
       return uploaded;
     } catch (error) {
       if (error?.http_code !== 400) throw error;
-      const existing = await client.api.resource(publicId);
+      const existing = await client.api.resource(publicId, {
+        resource_type: resourceType,
+        type: "upload"
+      });
       if (existing.bytes === bytes.length) return existing;
       throw new WorkerError("asset_conflict", "asset_conflict", `Asset digest mismatch for ${displayName}`);
     }
@@ -79,7 +82,10 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
   async function findManifest(runKey) {
     let record;
     try {
-      record = await client.api.resource(manifestPublicId(runKey));
+      record = await client.api.resource(manifestPublicId(runKey), {
+        resource_type: "raw",
+        type: "upload"
+      });
     } catch (error) {
       const code = error?.error?.http_code ?? error?.http_code ?? error?.statusCode ?? error?.status;
       if (code === 404) return null;
