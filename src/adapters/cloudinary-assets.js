@@ -86,7 +86,12 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
       const message = error?.error?.message ?? error?.message ?? String(error);
       throw new WorkerError("external", "cloudinary_error", `Cloudinary findManifest failed: ${message}`, error);
     }
-    const manifest = await loadJson(record.secure_url);
+    let manifest;
+    try {
+      manifest = await loadJson(record.secure_url);
+    } catch (error) {
+      throw new WorkerError("external", "cloudinary_manifest_fetch", `Failed to fetch manifest JSON from ${record.secure_url}: ${error.message}`, error);
+    }
     validateStoredManifest(manifest);
     return { ...manifest, locator: `cloudinary://${runKey}` };
   }
