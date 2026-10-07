@@ -85,7 +85,9 @@ export function createFakeRenderer(renderFn) {
   };
 }
 
-export function createFakeAssetStore(manifests = new Map(), assets = new Map()) {
+import { WorkerError } from "../../src/worker/errors.js";
+
+export function createFakeAssetStore(manifests = new Map(), partials = new Map()) {
   const calls = { findManifest: 0, store: 0, loadManifest: 0 };
   return {
     calls,
@@ -95,16 +97,31 @@ export function createFakeAssetStore(manifests = new Map(), assets = new Map()) 
     },
     async store(renderResult, manifestDraft) {
       calls.store++;
-      const stored = { ...manifestDraft, locator: `cloudinary://${manifestDraft.runKey}` };
-      for (const [key, file] of Object.entries(manifestDraft.files)) {
-        if (key !== "slides") {
-          file.url = `https://cloudinary.com/${key}/${manifestDraft.runKey}/${file.name}`;
-        } else {
-          file.forEach((slide, i) => {
-            slide.url = `https://cloudinary.com/slides/${manifestDraft.runKey}/${slide.name}`;
-          });
+
+      // Reconcile each expected file against partial assets left by an
+      // interrupted upload: exact digest+size match is reused, a missing
+      // file is uploaded, a digest/size mismatch is a terminal conflict.
+      // The manifest itself is written only after every file reconciles.
+      const partialKey = (name) => `${manifestDraft.runKey}/${name}`;
+      const storedFiles = { pdf: null, cover: null, slides: [] };
+
+      const reconcileFile = (file) => {
+        const partial = partials.get(partialKey(file.name));
+        if (!partial) {
+          file.url = `https://cloudinary.com/files/${manifestDraft.runKey}/${file.name}`;
+          return file;
         }
-      }
+        if (partial.sha256 !== file.sha256 || partial.bytes !== file.bytes) {
+          throw new WorkerError("asset_conflict", "asset_conflict", `Asset digest mismatch for ${file.name}`);
+        }
+        return { ...file, url: partial.url };
+      };
+
+      storedFiles.pdf = reconcileFile({ ...manifestDraft.files.pdf });
+      storedFiles.cover = reconcileFile({ ...manifestDraft.files.cover });
+      storedFiles.slides = manifestDraft.files.slides.map((slide) => reconcileFile({ ...slide }));
+
+      const stored = { ...manifestDraft, files: storedFiles, locator: `cloudinary://${manifestDraft.runKey}` };
       manifests.set(manifestDraft.runKey, stored);
       return { manifest: stored, locator: stored.locator };
     },
@@ -115,6 +132,9 @@ export function createFakeAssetStore(manifests = new Map(), assets = new Map()) 
     },
     addManifest(runKey, manifest) {
       manifests.set(runKey, manifest);
+    },
+    addPartial(runKey, file) {
+      partials.set(`${runKey}/${file.name}`, { ...file });
     }
   };
 }

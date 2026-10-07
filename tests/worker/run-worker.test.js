@@ -222,3 +222,164 @@ test("renderer receives unique isolated paths", async () => {
   assert.ok(receivedInputPath.endsWith("test-001-carousel-v1.json"));
   assert.notEqual(receivedInputPath, "E:/linkedin-carousel-factory/input/carousel.json");
 });
+
+test("existing manifest skips renderer and upload", async () => {
+  const { createRunKey, sha256Bytes } = await import("../../src/worker/manifest.js");
+  const runKey = createRunKey("test-001", driveBytesTest001);
+  
+  const existingManifest = {
+    schemaVersion: 1,
+    jobId: "test-001",
+    payloadSha256: sha256Bytes(driveBytesTest001),
+    runKey,
+    style: { family: "dark-editorial", version: 1 },
+    createdAt: "2026-10-07T12:00:00.000Z",
+    files: {
+      pdf: { name: "carousel.pdf", sha256: "b".repeat(64), bytes: 100, url: "https://cloudinary.com/pdf" },
+      cover: { name: "cover.jpg", sha256: "c".repeat(64), bytes: 100, url: "https://cloudinary.com/cover" },
+      slides: Array.from({ length: 8 }, (_, i) => ({ name: `slide-${String(i + 1).padStart(2, "0")}.png`, sha256: "d".repeat(64), bytes: 100, url: `https://cloudinary.com/slide${i}` }))
+    },
+    locator: "cloudinary://" + runKey
+  };
+  
+  const job = { jobId: "test-001", rowId: "Sheet1!2", status: "carousel_created", carouselFile: "https://drive.google.com/test-001-carousel-v1.json", renderAttempts: 0, draftAttempts: 0, lockedAt: "", workerId: "", renderManifest: "", bufferDraftId: "", bufferDraftUrl: "", error: "", updatedAt: new Date().toISOString(), postText: "test post" };
+  
+  const queue = createFakeQueue([job]);
+  const payload = createFakePayloadStore(new Map([["test-001-carousel-v1.json", { bytes: driveBytesTest001 }]]));
+  const renderer = createFakeRenderer(renderCarousel);
+  const assets = createFakeAssetStore(new Map([[runKey, existingManifest]]));
+  const drafts = createFakeDraftService();
+  const clock = createTestClock();
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload, renderer, assets, drafts }),
+    clock,
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "render_created");
+  assert.equal(renderer.calls.render, 0);
+  assert.equal(assets.calls.store, 0);
+  assert.equal(assets.calls.findManifest, 1);
+  
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "render_created");
+  assert.equal(updated.renderManifest, existingManifest.locator);
+});
+
+test("partial assets with matching digest and size are reused", async () => {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  // Deterministic stub: identical bytes on every render, so partials match.
+  const stubRenderer = (calls) => createFakeRenderer(async ({ inputPath, distDir }) => {
+    calls.count++;
+    mkdirSync(distDir, { recursive: true });
+    const pdf = join(distDir, "carousel.pdf");
+    const cover = join(distDir, "cover.jpg");
+    writeFileSync(pdf, Buffer.from("pdf-bytes"));
+    writeFileSync(cover, Buffer.from("cover-bytes"));
+    const slides = [];
+    for (let i = 1; i <= 8; i++) {
+      const p = join(distDir, `slide-${String(i).padStart(2, "0")}.png`);
+      writeFileSync(p, Buffer.from(`slide-${i}-bytes`));
+      slides.push(p);
+    }
+    return { html: join(distDir, "carousel.html"), pdf, cover, slides };
+  });
+
+  const makeJob = (rowId) => ({ jobId: "test-001", rowId, status: "carousel_created", carouselFile: "https://drive.google.com/test-001-carousel-v1.json", renderAttempts: 0, draftAttempts: 0, lockedAt: "", workerId: "", renderManifest: "", bufferDraftId: "", bufferDraftUrl: "", error: "", updatedAt: new Date().toISOString(), postText: "test post" });
+  const makePayload = () => createFakePayloadStore(new Map([["test-001-carousel-v1.json", { bytes: driveBytesTest001 }]]));
+
+  // Phase 1: fresh store, full render + upload.
+  const calls1 = { count: 0 };
+  const queue1 = createFakeQueue([makeJob("Sheet1!2")]);
+  const assets1 = createFakeAssetStore();
+  const result1 = await runWorker({
+    ports: makePorts({ queue: queue1, payload: makePayload(), renderer: stubRenderer(calls1), assets: assets1, drafts: createFakeDraftService() }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test-1"
+  });
+  assert.equal(result1.outcome, "render_created");
+
+  // Phase 2: new store holding only partial assets (no manifest), digests match.
+  const assets2 = createFakeAssetStore();
+  assets2.addPartial(result1.manifest.runKey, result1.manifest.files.pdf);
+  assets2.addPartial(result1.manifest.runKey, result1.manifest.files.cover);
+  for (const slide of result1.manifest.files.slides) assets2.addPartial(result1.manifest.runKey, slide);
+
+  const calls2 = { count: 0 };
+  const queue2 = createFakeQueue([makeJob("Sheet1!3")]);
+  const result2 = await runWorker({
+    ports: makePorts({ queue: queue2, payload: makePayload(), renderer: stubRenderer(calls2), assets: assets2, drafts: createFakeDraftService() }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test-2"
+  });
+
+  assert.equal(result2.outcome, "render_created");
+  assert.equal(calls2.count, 1);
+  assert.equal(result2.manifest.files.pdf.url, result1.manifest.files.pdf.url);
+  assert.equal(result2.manifest.files.cover.url, result1.manifest.files.cover.url);
+  assert.deepEqual(
+    result2.manifest.files.slides.map((s) => s.url),
+    result1.manifest.files.slides.map((s) => s.url)
+  );
+});
+
+test("partial asset with conflicting digest causes terminal render_failed with asset_conflict", async () => {
+  const { createRunKey } = await import("../../src/worker/manifest.js");
+  const runKey = createRunKey("test-001", driveBytesTest001);
+
+  const job = { jobId: "test-001", rowId: "Sheet1!2", status: "carousel_created", carouselFile: "https://drive.google.com/test-001-carousel-v1.json", renderAttempts: 0, draftAttempts: 0, lockedAt: "", workerId: "", renderManifest: "", bufferDraftId: "", bufferDraftUrl: "", error: "", updatedAt: new Date().toISOString(), postText: "test post" };
+
+  // No complete manifest: only a stale partial whose digest cannot match.
+  const assets = createFakeAssetStore();
+  assets.addPartial(runKey, { name: "carousel.pdf", sha256: "0".repeat(64), bytes: 100, url: "https://cloudinary.com/stale-pdf" });
+
+  const queue = createFakeQueue([job]);
+  const payload = createFakePayloadStore(new Map([["test-001-carousel-v1.json", { bytes: driveBytesTest001 }]]));
+  const renderer = createFakeRenderer(renderCarousel);
+  const drafts = createFakeDraftService();
+  const clock = createTestClock();
+
+  const result = await runWorker({
+    ports: makePorts({ queue, payload, renderer, assets, drafts }),
+    clock,
+    createWorkerId: () => "worker-test"
+  });
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(renderer.calls.render, 1);
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "render_failed");
+  assert.ok(updated.error.includes("asset_conflict"));
+});
+
+test("repeating same payload returns same run key", async () => {
+  const makeJob = (rowId) => ({ jobId: "test-001", rowId, status: "carousel_created", carouselFile: "https://drive.google.com/test-001-carousel-v1.json", renderAttempts: 0, draftAttempts: 0, lockedAt: "", workerId: "", renderManifest: "", bufferDraftId: "", bufferDraftUrl: "", error: "", updatedAt: new Date().toISOString(), postText: "test post" });
+  const makePayload = () => createFakePayloadStore(new Map([["test-001-carousel-v1.json", { bytes: driveBytesTest001 }]]));
+
+  // Shared asset store: second run must find the first run's manifest.
+  const assets = createFakeAssetStore();
+
+  const queue = createFakeQueue([makeJob("Sheet1!2")]);
+  const renderer = createFakeRenderer(renderCarousel);
+  const result1 = await runWorker({
+    ports: makePorts({ queue, payload: makePayload(), renderer, assets, drafts: createFakeDraftService() }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test-1"
+  });
+
+  const queue2 = createFakeQueue([makeJob("Sheet1!3")]);
+  const renderer2 = createFakeRenderer(renderCarousel);
+  const result2 = await runWorker({
+    ports: makePorts({ queue: queue2, payload: makePayload(), renderer: renderer2, assets, drafts: createFakeDraftService() }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test-2"
+  });
+
+  assert.ok(result1.manifest);
+  assert.ok(result2.manifest);
+  assert.equal(result1.manifest.runKey, result2.manifest.runKey);
+  assert.equal(renderer2.calls.render, 0);
+});
