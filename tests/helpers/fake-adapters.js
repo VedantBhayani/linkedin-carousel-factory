@@ -145,6 +145,7 @@ export function createFakeDraftService(drafts = new Map()) {
     calls,
     lastCreate: null,
     ambiguousOnCreate: false,
+    createError: null,
     async findDraft({ runKey, storedDraftId }) {
       calls.findDraft++;
       if (storedDraftId && drafts.has(storedDraftId)) {
@@ -161,6 +162,9 @@ export function createFakeDraftService(drafts = new Map()) {
       if (service.ambiguousOnCreate) {
         service.ambiguousOnCreate = false;
         throw new AmbiguousExternalError("buffer_ambiguous", "Buffer create outcome unknown");
+      }
+      if (service.createError) {
+        throw service.createError;
       }
       const id = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const draft = { id, url: `https://buffer.com/draft/${id}`, runKey, caption, pdfUrl };

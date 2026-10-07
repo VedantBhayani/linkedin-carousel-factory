@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runWorker } from "../../src/worker/run-worker.js";
+import { WorkerError } from "../../src/worker/errors.js";
 import { createFakeQueue, createFakePayloadStore, createFakeRenderer, createFakeAssetStore, createFakeDraftService, createTestClock, createWorkerId } from "../helpers/fake-adapters.js";
 import { renderCarousel } from "../../src/render.js";
 
@@ -625,4 +626,169 @@ test("ambiguous create enters draft_retry without a second create call", async (
   const updated = queue.getJob("Sheet1!2");
   assert.equal(updated.status, "draft_retry");
   assert.ok(updated.error.includes("buffer_ambiguous"));
+});
+
+async function runWorkerOnce({ queue, payload, renderer, assets, drafts }) {
+  return runWorker({
+    ports: makePorts({ queue, payload, renderer, assets, drafts }),
+    clock: createTestClock(),
+    createWorkerId: () => "worker-test"
+  });
+}
+
+test("render retry: attempt one failure becomes render_retry", async () => {
+  const job = makeDraftOnlyJob({ status: "carousel_created", renderAttempts: 0, renderManifest: "" });
+  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", status: "carousel_created", renderAttempts: 0, renderManifest: "" });
+  const queue = createFakeQueue([job, other]);
+  const payload = createFakePayloadStore();
+
+  await runWorkerOnce({ queue, payload, renderer: createFakeRenderer(renderCarousel), assets: createFakeAssetStore(), drafts: createFakeDraftService() });
+
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "render_retry");
+  assert.equal(updated.renderAttempts, 1);
+  const untouched = queue.getJob("Sheet1!9");
+  assert.equal(untouched.status, "carousel_created");
+  assert.equal(untouched.renderAttempts, 0);
+});
+
+test("render retry: attempt two stays retryable, attempt three is terminal", async () => {
+  const job = makeDraftOnlyJob({ status: "carousel_created", renderAttempts: 0, renderManifest: "" });
+  const queue = createFakeQueue([job]);
+  const payload = createFakePayloadStore();
+  const assets = createFakeAssetStore();
+  const drafts = createFakeDraftService();
+
+  await runWorkerOnce({ queue, payload, renderer: createFakeRenderer(renderCarousel), assets, drafts });
+  assert.equal(queue.getJob("Sheet1!2").status, "render_retry");
+
+  await runWorkerOnce({ queue, payload, renderer: createFakeRenderer(renderCarousel), assets, drafts });
+  const second = queue.getJob("Sheet1!2");
+  assert.equal(second.status, "render_retry");
+  assert.equal(second.renderAttempts, 2);
+
+  await runWorkerOnce({ queue, payload, renderer: createFakeRenderer(renderCarousel), assets, drafts });
+  const third = queue.getJob("Sheet1!2");
+  assert.equal(third.status, "render_failed");
+  assert.equal(third.renderAttempts, 3);
+});
+
+test("draft retry: three recoverable failures end in draft_failed", async () => {
+  const { locator } = await buildStoredManifest("test-001", driveBytesTest001);
+  const job = makeDraftOnlyJob({ renderManifest: locator });
+  const queue = createFakeQueue([job]);
+  const assets = createFakeAssetStore();
+  const { manifest } = await buildStoredManifest("test-001", driveBytesTest001);
+  assets.addManifest(manifest.runKey, manifest);
+  const drafts = createFakeDraftService();
+  drafts.createError = new WorkerError("external", "buffer_down", "Buffer API unavailable");
+
+  const run = () => runWorkerOnce({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts });
+
+  await run();
+  assert.equal(queue.getJob("Sheet1!2").status, "draft_retry");
+  await run();
+  const second = queue.getJob("Sheet1!2");
+  assert.equal(second.status, "draft_retry");
+  assert.equal(second.draftAttempts, 2);
+  await run();
+  const third = queue.getJob("Sheet1!2");
+  assert.equal(third.status, "draft_failed");
+  assert.equal(third.draftAttempts, 3);
+});
+
+test("stale rendering lock is reclaimed as a new render attempt", async () => {
+  const base = new Date("2026-10-07T12:00:00.000Z").getTime();
+  const stale = new Date(base - 45 * 60 * 1000).toISOString();
+  const job = makeDraftOnlyJob({ status: "rendering", lockedAt: stale, workerId: "dead-worker", renderAttempts: 0, renderManifest: "" });
+  const queue = createFakeQueue([job]);
+
+  await runWorkerOnce({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets: createFakeAssetStore(), drafts: createFakeDraftService() });
+
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.renderAttempts, 1);
+  assert.equal(updated.status, "render_retry");
+  assert.equal(updated.workerId, "");
+});
+
+test("stale drafting lock is reclaimed as a new draft attempt", async () => {
+  const { locator } = await buildStoredManifest("test-001", driveBytesTest001);
+  const { manifest } = await buildStoredManifest("test-001", driveBytesTest001);
+  const assets = createFakeAssetStore();
+  assets.addManifest(manifest.runKey, manifest);
+  const drafts = createFakeDraftService();
+  drafts.createError = new WorkerError("external", "buffer_down", "Buffer API unavailable");
+
+  const base = new Date("2026-10-07T12:00:00.000Z").getTime();
+  const stale = new Date(base - 45 * 60 * 1000).toISOString();
+  const job = makeDraftOnlyJob({ status: "drafting", lockedAt: stale, workerId: "dead-worker", renderManifest: locator });
+  const queue = createFakeQueue([job]);
+
+  await runWorkerOnce({ queue, payload: createFakePayloadStore(), renderer: createFakeRenderer(renderCarousel), assets, drafts });
+
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.draftAttempts, 1);
+  assert.equal(updated.status, "draft_retry");
+});
+
+test("fresh locks produce idle behavior with no writes", async () => {
+  const base = new Date("2026-10-07T12:00:00.000Z").getTime();
+  const recent = new Date(base - 5 * 60 * 1000).toISOString();
+  const rendering = makeDraftOnlyJob({ status: "rendering", lockedAt: recent, workerId: "active-worker", renderAttempts: 1, renderManifest: "" });
+  const drafting = makeDraftOnlyJob({ rowId: "Sheet1!3", status: "drafting", lockedAt: recent, workerId: "active-worker", renderManifest: "cloudinary://x" });
+  const queue = createFakeQueue([rendering, drafting]);
+  const payload = createFakePayloadStore();
+  const renderer = createFakeRenderer(renderCarousel);
+
+  const result = await runWorkerOnce({ queue, payload, renderer, assets: createFakeAssetStore(), drafts: createFakeDraftService() });
+
+  assert.equal(result.outcome, "idle");
+  assert.equal(queue.calls.persistClaim, 0);
+  assert.equal(queue.calls.persistState, 0);
+  assert.equal(payload.calls.download, 0);
+  assert.equal(renderer.calls.render, 0);
+});
+
+test("configuration failure happens before any job is claimed", async () => {
+  const job = makeDraftOnlyJob({ status: "carousel_created", renderManifest: "" });
+  const queue = createFakeQueue([job]);
+  const ports = makePorts({
+    queue,
+    payload: createFakePayloadStore(),
+    renderer: createFakeRenderer(renderCarousel),
+    assets: createFakeAssetStore(),
+    drafts: createFakeDraftService()
+  });
+  delete ports.DraftService.createDraft;
+
+  await assert.rejects(
+    runWorker({ ports, clock: createTestClock(), createWorkerId: () => "worker-test" }),
+    /DraftService missing methods/
+  );
+  assert.equal(queue.calls.findEligible, 0);
+  assert.equal(queue.calls.persistClaim, 0);
+});
+
+test("queue errors are sanitized and row-scoped", async () => {
+  const job = makeDraftOnlyJob({ status: "carousel_created", renderAttempts: 0, renderManifest: "" });
+  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", status: "carousel_created" });
+  const queue = createFakeQueue([job, other]);
+  const payload = createFakePayloadStore();
+  const secretUrl = "https://drive.google.com/file/d/secret123/view?usp=sharing";
+  const originalDownload = payload.download.bind(payload);
+  payload.download = async () => {
+    throw new WorkerError("external", "drive_timeout", `GET ${secretUrl} timed out after 30s`);
+  };
+  void originalDownload;
+
+  await runWorkerOnce({ queue, payload, renderer: createFakeRenderer(renderCarousel), assets: createFakeAssetStore(), drafts: createFakeDraftService() });
+
+  const updated = queue.getJob("Sheet1!2");
+  assert.equal(updated.status, "render_retry");
+  assert.ok(!updated.error.includes("https://"));
+  assert.ok(!updated.error.includes("secret123"));
+  assert.ok(updated.error.includes("drive_timeout"));
+  const untouched = queue.getJob("Sheet1!9");
+  assert.equal(untouched.status, "carousel_created");
+  assert.equal(untouched.error, "");
 });
