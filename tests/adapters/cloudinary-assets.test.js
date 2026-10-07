@@ -206,6 +206,50 @@ test("loadManifest reloads a stored manifest by locator", async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("loadManifest preserves typed Cloudinary fetch failures", async () => {
+  const cloudinary = makeCloudinary();
+  const store = makeStore(cloudinary);
+  const runKey = "test-001:" + "a".repeat(64);
+  const { renderResult, files, dir } = writeRenderOutput();
+  const stored = await store.store(renderResult, manifestDraft(runKey, files));
+  const failingStore = createCloudinaryAssetStore({
+    cloudinary,
+    cloudName: "demo",
+    loadJson: async () => {
+      throw new Error("upstream 502");
+    }
+  });
+
+  await assert.rejects(failingStore.loadManifest(stored.locator), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "external");
+    assert.equal(error.code, "cloudinary_manifest_fetch");
+    assert.match(error.message, /upstream 502/);
+    return true;
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("loadManifest classifies malformed stored JSON as data-integrity failure", async () => {
+  const cloudinary = makeCloudinary();
+  const runKey = "test-001:" + "a".repeat(64);
+  const publicId = `carousel/test-001/${"a".repeat(64)}/carousel-manifest`;
+  cloudinary.objects.set(publicId, {
+    public_id: publicId,
+    secure_url: `https://res.cloudinary.com/demo/raw/upload/${publicId}`,
+    bytes: 8,
+    raw: "not-json"
+  });
+  const store = makeStore(cloudinary);
+
+  await assert.rejects(store.loadManifest(`cloudinary://${runKey}`), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "data_integrity");
+    assert.equal(error.code, "invalid_render_manifest");
+    return true;
+  });
+});
+
 test("loadManifest rejects unknown locators as data-integrity errors", async () => {
   const cloudinary = makeCloudinary();
   const store = makeStore(cloudinary);

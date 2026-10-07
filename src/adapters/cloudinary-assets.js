@@ -80,9 +80,10 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
   }
 
   async function findManifest(runKey) {
+    const publicId = manifestPublicId(runKey);
     let record;
     try {
-      record = await client.api.resource(manifestPublicId(runKey), {
+      record = await client.api.resource(publicId, {
         resource_type: "raw",
         type: "upload"
       });
@@ -96,6 +97,10 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
     try {
       manifest = await loadJson(record.secure_url);
     } catch (error) {
+      if (error instanceof WorkerError) throw error;
+      if (error instanceof SyntaxError) {
+        throw new WorkerError("data_integrity", "invalid_render_manifest", "Stored render manifest JSON is invalid", error);
+      }
       throw new WorkerError("external", "cloudinary_manifest_fetch", `Failed to fetch manifest JSON from ${record.secure_url}: ${error.message}`, error);
     }
     validateStoredManifest(manifest);
@@ -146,7 +151,7 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
         if (!manifest) throw new Error("missing");
         return manifest;
       } catch (error) {
-        if (error instanceof WorkerError && error.code === "invalid_render_manifest") throw error;
+        if (error instanceof WorkerError && error.type === "external") throw error;
         throw new WorkerError("data_integrity", "invalid_render_manifest", "Stored render manifest is missing or invalid");
       }
     }
