@@ -14,6 +14,7 @@
   "dependencies": {
     "@fontsource/inter": "^5.2.6",
     "@fontsource/lora": "^5.2.7",
+    "cloudinary": "2.11.0",
     "googleapis": "183.0.0",
     "image-size": "^2.0.2",
     "pdf-lib": "^1.17.1",
