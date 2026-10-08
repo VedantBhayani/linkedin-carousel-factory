@@ -79,6 +79,7 @@ test("createDraft sends a document draft mutation with caption, pdf, and cover",
   assert.equal(calls[0].options.headers.Authorization, "Bearer key");
   const body = JSON.parse(calls[0].options.body);
   assert.ok(body.query.includes("createPost"));
+  assert.ok(body.query.includes("__typename"));
   assert.equal(body.variables.input.text, "exact caption");
   assert.equal(body.variables.input.channelId, "channel-1");
   assert.equal(body.variables.input.schedulingType, "automatic");
@@ -89,6 +90,23 @@ test("createDraft sends a document draft mutation with caption, pdf, and cover",
   assert.ok(body.variables.input.assets[0].document.title.length > 0);
   assert.equal(draft.id, "post-1");
   assert.equal(draft.url, "");
+});
+
+test("createDraft preserves top-level GraphQL errors", async () => {
+  const { fetch } = makeFetch([
+    jsonResponse({ errors: [{ message: "channel does not support documents" }] })
+  ]);
+  const service = makeService(fetch);
+
+  await assert.rejects(
+    service.createDraft({ runKey: "r", caption: "c", pdfUrl: "https://x/y.pdf", coverUrl: "https://x/c.jpg" }),
+    (error) => {
+      assert.ok(error instanceof WorkerError);
+      assert.equal(error.code, "buffer_graphql_error");
+      assert.match(error.message, /channel does not support documents/);
+      return true;
+    }
+  );
 });
 
 test("createDraft maps MutationError to recoverable errors", async () => {

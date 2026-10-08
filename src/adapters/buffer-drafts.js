@@ -4,6 +4,7 @@ const API_URL = "https://api.buffer.com";
 
 const CREATE_DRAFT_MUTATION = `mutation CreateDraftPost($input: CreatePostInput!) {
   createPost(input: $input) {
+    __typename
     ... on PostActionSuccess {
       post { id status externalLink }
     }
@@ -36,7 +37,12 @@ export function createBufferDraftService({ fetch: fetchImpl = fetch, apiKey, cha
     if (!response.ok) {
       throw new WorkerError("external", "buffer_http_error", `Buffer HTTP ${response.status}`);
     }
-    return response.json();
+    const payload = await response.json();
+    if (Array.isArray(payload?.errors) && payload.errors.length > 0) {
+      const message = payload.errors.map((error) => error?.message).filter(Boolean).join("; ") || "unknown GraphQL error";
+      throw new WorkerError("external", "buffer_graphql_error", `Buffer GraphQL error: ${message}`);
+    }
+    return payload;
   }
 
   function requireCredentials() {
@@ -90,7 +96,7 @@ export function createBufferDraftService({ fetch: fetchImpl = fetch, apiKey, cha
       });
 
       const result = data?.data?.createPost;
-      if (result?.__typename === "PostActionSuccess" && result.post) {
+      if (result?.post) {
         return toDraftResult(result.post);
       }
       const message = result?.message ?? "unknown Buffer error";
