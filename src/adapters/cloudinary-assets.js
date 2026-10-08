@@ -103,7 +103,16 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
       if (code === 404) return null;
       throw new WorkerError("external", "cloudinary_manifest_fetch", `Failed to fetch manifest JSON from ${manifestUrl}: ${error.message}`, error);
     }
-    validateStoredManifest(manifest);
+    try {
+      validateStoredManifest(manifest);
+    } catch (error) {
+      throw new WorkerError(
+        "data_integrity",
+        "invalid_render_manifest",
+        `Stored render manifest shape is invalid: ${error.message}`,
+        error
+      );
+    }
     return { ...manifest, locator: `cloudinary://${runKey}` };
   }
 
@@ -148,10 +157,18 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
       const runKey = String(locator).trim().replace(/^cloudinary:\/\/\s*/, "").trim();
       try {
         const manifest = await findManifest(runKey);
-        if (!manifest) throw new Error("missing");
+        if (!manifest) {
+          throw new WorkerError(
+            "data_integrity",
+            "invalid_render_manifest",
+            "Stored render manifest was not found"
+          );
+        }
         return manifest;
       } catch (error) {
-        if (error instanceof WorkerError && error.type === "external") throw error;
+        if (error instanceof WorkerError && (error.type === "external" || error.code === "invalid_render_manifest")) {
+          throw error;
+        }
         throw new WorkerError("data_integrity", "invalid_render_manifest", "Stored render manifest is missing or invalid");
       }
     }

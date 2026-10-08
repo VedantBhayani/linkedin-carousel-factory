@@ -290,6 +290,21 @@ test("loadManifest classifies malformed stored JSON as data-integrity failure", 
     assert.ok(error instanceof WorkerError);
     assert.equal(error.type, "data_integrity");
     assert.equal(error.code, "invalid_render_manifest");
+    assert.match(error.message, /JSON is invalid/);
+    return true;
+  });
+});
+
+test("loadManifest identifies a missing public manifest", async () => {
+  const cloudinary = makeCloudinary();
+  const store = makeStore(cloudinary);
+  const runKey = "test-001:" + "a".repeat(64);
+
+  await assert.rejects(store.loadManifest(`cloudinary://${runKey}`), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "data_integrity");
+    assert.equal(error.code, "invalid_render_manifest");
+    assert.match(error.message, /not found/);
     return true;
   });
 });
