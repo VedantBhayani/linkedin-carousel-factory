@@ -71,6 +71,21 @@ test("rowToJob defaults attempts to zero on empty cells", () => {
   assert.equal(job.draftAttempts, 0);
 });
 
+test("rowToJob tolerates surrounding whitespace in header names", () => {
+  const header = [...HEADER];
+  header[3] = " brief_file ";
+  header[7] = " worker_id";
+  header[9] = "render_manifest ";
+  const cells = [...baseRow];
+  cells[7] = "worker-1";
+  cells[9] = "cloudinary://launch-video-001:" + "a".repeat(64);
+
+  const job = rowToJob(header, row(cells), 2, "Sheet1");
+  assert.equal(job.briefFile, "https://drive.google.com/brief");
+  assert.equal(job.workerId, "worker-1");
+  assert.equal(job.renderManifest, cells[9]);
+});
+
 test("findEligible returns the first eligible row only", async () => {
   const done = [...baseRow];
   done[0] = "done-1";

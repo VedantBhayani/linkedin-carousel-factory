@@ -36,8 +36,9 @@ function parseAttempts(value) {
 }
 
 export function rowToJob(header, values, rowNumber, sheetName) {
+  const normalizedHeader = header.map((name) => String(name).trim());
   const cell = (name) => {
-    const index = header.indexOf(name);
+    const index = normalizedHeader.indexOf(name);
     return index === -1 ? "" : (values[index] ?? "");
   };
   const controlCell = (name) => String(cell(name)).trim();
