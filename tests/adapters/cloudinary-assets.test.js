@@ -121,8 +121,13 @@ test("store uploads all files under run-key paths with overwrite off", async () 
   const { manifest, locator } = await store.store(renderResult, manifestDraft(runKey, files));
 
   assert.equal(cloudinary.calls.upload, 11);
+  const prefix = `carousel/test-001/${"a".repeat(64)}`;
+  assert.ok(cloudinary.objects.has(`${prefix}/carousel.pdf`));
+  assert.ok(cloudinary.objects.has(`${prefix}/carousel-manifest.json`));
+  assert.ok(cloudinary.objects.has(`${prefix}/cover`));
+  assert.ok(cloudinary.objects.has(`${prefix}/slide-01`));
   for (const [publicId] of cloudinary.objects) {
-    assert.ok(publicId.startsWith(`carousel/test-001/${"a".repeat(64)}/`));
+    assert.ok(publicId.startsWith(`${prefix}/`));
   }
   assert.ok(locator.startsWith("cloudinary://"));
   assert.ok(manifest.files.pdf.url.startsWith("https://"));
@@ -149,7 +154,7 @@ test("store reuses byte-identical remote assets without re-uploading", async () 
     firstResult.manifest.files.slides.map((s) => s.url)
   );
   const rawLookups = cloudinary.calls.resourceOptions.filter(({ publicId }) =>
-    publicId.endsWith("/carousel") || publicId.endsWith("/carousel-manifest"));
+    publicId.endsWith("/carousel.pdf") || publicId.endsWith("/carousel-manifest.json"));
   const imageLookups = cloudinary.calls.resourceOptions.filter(({ publicId }) =>
     publicId.endsWith("/cover") || /\/slide-\d{2}$/.test(publicId));
   assert.ok(rawLookups.length >= 2);
@@ -201,6 +206,8 @@ test("loadManifest reloads a stored manifest by locator", async () => {
   const reloaded = await store.loadManifest(stored.locator);
   assert.equal(reloaded.runKey, runKey);
   assert.equal(reloaded.files.slides.length, 8);
+  const prefix = `carousel/test-001/${"a".repeat(64)}`;
+  assert.equal(cloudinary.calls.resourceOptions.at(-1).publicId, `${prefix}/carousel-manifest.json`);
   assert.equal(cloudinary.calls.resourceOptions.at(-1).options.resource_type, "raw");
   assert.equal(cloudinary.calls.resourceOptions.at(-1).options.type, "upload");
   fs.rmSync(dir, { recursive: true, force: true });
@@ -245,7 +252,7 @@ test("loadManifest preserves typed Cloudinary fetch failures", async () => {
 test("loadManifest classifies malformed stored JSON as data-integrity failure", async () => {
   const cloudinary = makeCloudinary();
   const runKey = "test-001:" + "a".repeat(64);
-  const publicId = `carousel/test-001/${"a".repeat(64)}/carousel-manifest`;
+  const publicId = `carousel/test-001/${"a".repeat(64)}/carousel-manifest.json`;
   cloudinary.objects.set(publicId, {
     public_id: publicId,
     secure_url: `https://res.cloudinary.com/demo/raw/upload/${publicId}`,

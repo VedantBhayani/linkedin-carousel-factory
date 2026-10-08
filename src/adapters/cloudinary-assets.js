@@ -29,12 +29,13 @@ function splitRunKey(runKey) {
 
 function assetPublicId(runKey, fileName) {
   const { jobId, hash } = splitRunKey(runKey);
-  return `carousel/${jobId}/${hash}/${baseNameOf(fileName)}`;
+  const publicFileName = resourceTypeOf(fileName) === "raw" ? fileName : baseNameOf(fileName);
+  return `carousel/${jobId}/${hash}/${publicFileName}`;
 }
 
 function manifestPublicId(runKey) {
   const { jobId, hash } = splitRunKey(runKey);
-  return `carousel/${jobId}/${hash}/carousel-manifest`;
+  return `carousel/${jobId}/${hash}/carousel-manifest.json`;
 }
 
 function resourceTypeOf(fileName) {
