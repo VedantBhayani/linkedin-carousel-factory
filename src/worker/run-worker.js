@@ -192,7 +192,12 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
   try {
     validateStoredManifest(manifest);
   } catch (error) {
-    throw new WorkerError("data_integrity", "invalid_render_manifest", "Stored render manifest is missing or invalid");
+    throw new WorkerError(
+      "data_integrity",
+      "invalid_render_manifest",
+      `Stored render manifest is missing or invalid: ${error.message}`,
+      error
+    );
   }
 
   const existingDraft = await DraftService.findDraft({ runKey: manifest.runKey, storedDraftId: draftJob.bufferDraftId });
