@@ -200,7 +200,11 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
     );
   }
 
-  const existingDraft = await DraftService.findDraft({ runKey: manifest.runKey, storedDraftId: draftJob.bufferDraftId });
+  const existingDraft = await DraftService.findDraft({
+    runKey: manifest.runKey,
+    storedDraftId: draftJob.bufferDraftId,
+    caption: draftJob.postText
+  });
   if (existingDraft) {
     await JobQueue.persistState(draftJob.rowId, {
       status: "draft_created",

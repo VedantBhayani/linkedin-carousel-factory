@@ -20,6 +20,24 @@ const FIND_POST_QUERY = `query FindPost($id: PostId!) {
   }
 }`;
 
+const FIND_ORGANIZATIONS_QUERY = `query FindOrganizations {
+  account {
+    organizations { id }
+  }
+}`;
+
+const FIND_CHANNEL_DRAFTS_QUERY = `query FindChannelDrafts($organizationId: OrganizationId!, $channelId: ChannelId!) {
+  posts(input: {
+    organizationId: $organizationId
+    sort: [{ field: createdAt, direction: desc }]
+    filter: { status: [draft], channelIds: [$channelId] }
+  }) {
+    edges {
+      node { id text status externalLink channelId }
+    }
+  }
+}`;
+
 export function createBufferDraftService({ fetch: fetchImpl = fetch, apiKey, channelId } = {}) {
   if (!fetchImpl) throw new WorkerError("configuration", "missing_fetch", "A fetch implementation is required");
 
@@ -55,13 +73,30 @@ export function createBufferDraftService({ fetch: fetchImpl = fetch, apiKey, cha
   }
 
   return {
-    async findDraft({ runKey, storedDraftId }) {
-      if (!storedDraftId) return null;
+    async findDraft({ runKey, storedDraftId, caption }) {
+      if (!storedDraftId && !caption) return null;
       requireCredentials();
-      const data = await postGraphql(FIND_POST_QUERY, { id: storedDraftId });
-      const post = data?.data?.post;
-      if (!post) return null;
-      return toDraftResult(post);
+      if (storedDraftId) {
+        const data = await postGraphql(FIND_POST_QUERY, { id: storedDraftId });
+        const post = data?.data?.post;
+        if (!post) return null;
+        return toDraftResult(post);
+      }
+
+      const accountData = await postGraphql(FIND_ORGANIZATIONS_QUERY, {});
+      const organizations = accountData?.data?.account?.organizations ?? [];
+      for (const organization of organizations) {
+        const data = await postGraphql(FIND_CHANNEL_DRAFTS_QUERY, {
+          organizationId: organization.id,
+          channelId
+        });
+        const posts = (data?.data?.posts?.edges ?? []).map((edge) => edge?.node).filter(Boolean);
+        const match = posts.find((post) =>
+          post.status === "draft" && post.channelId === channelId && post.text === caption
+        );
+        if (match) return toDraftResult(match);
+      }
+      return null;
     },
 
     async createDraft({ runKey, caption, pdfUrl, coverUrl }) {

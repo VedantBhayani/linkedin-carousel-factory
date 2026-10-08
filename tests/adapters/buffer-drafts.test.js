@@ -33,6 +33,32 @@ test("findDraft returns null without a stored draft id", async () => {
   assert.equal(calls.length, 0);
 });
 
+test("findDraft reconciles an existing channel draft by exact caption", async () => {
+  const { fetch, calls } = makeFetch([
+    jsonResponse({ data: { account: { organizations: [{ id: "org-1" }] } } }),
+    jsonResponse({
+      data: {
+        posts: {
+          edges: [
+            { node: { id: "other", text: "different", status: "draft", externalLink: null, channelId: "channel-1" } },
+            { node: { id: "draft-1", text: "exact caption", status: "draft", externalLink: null, channelId: "channel-1" } }
+          ]
+        }
+      }
+    })
+  ]);
+  const service = makeService(fetch);
+
+  const draft = await service.findDraft({ runKey: "job-1:abc", storedDraftId: "", caption: "exact caption" });
+
+  assert.equal(draft.id, "draft-1");
+  assert.equal(calls.length, 2);
+  const postsRequest = JSON.parse(calls[1].options.body);
+  assert.ok(postsRequest.query.includes("status: [draft]"));
+  assert.equal(postsRequest.variables.organizationId, "org-1");
+  assert.equal(postsRequest.variables.channelId, "channel-1");
+});
+
 test("findDraft verifies a stored draft id through the post query", async () => {
   const { fetch, calls } = makeFetch([
     jsonResponse({ data: { post: { id: "stored-1", status: "draft", externalLink: null } } })
