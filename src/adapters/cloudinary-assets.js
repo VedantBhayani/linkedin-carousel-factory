@@ -46,8 +46,17 @@ function resourceTypeOf(fileName) {
 
 async function defaultLoadJson(secureUrl) {
   const response = await fetch(secureUrl);
-  if (!response.ok) throw new Error(`Manifest fetch failed: ${response.status}`);
+  if (!response.ok) {
+    const error = new Error(`Manifest fetch failed: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
+}
+
+function rawDeliveryUrl(cloudName, publicId) {
+  const encodedPublicId = publicId.split("/").map(encodeURIComponent).join("/");
+  return `https://res.cloudinary.com/${encodeURIComponent(cloudName)}/raw/upload/${encodedPublicId}`;
 }
 
 export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiSecret, loadJson = defaultLoadJson } = {}) {
@@ -81,28 +90,18 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
   }
 
   async function findManifest(runKey) {
-    const publicId = manifestPublicId(runKey);
-    let record;
-    try {
-      record = await client.api.resource(publicId, {
-        resource_type: "raw",
-        type: "upload"
-      });
-    } catch (error) {
-      const code = error?.error?.http_code ?? error?.http_code ?? error?.statusCode ?? error?.status;
-      if (code === 404) return null;
-      const message = error?.error?.message ?? error?.message ?? String(error);
-      throw new WorkerError("external", "cloudinary_error", `Cloudinary findManifest failed: ${message}`, error);
-    }
+    const manifestUrl = rawDeliveryUrl(cloudName, manifestPublicId(runKey));
     let manifest;
     try {
-      manifest = await loadJson(record.secure_url);
+      manifest = await loadJson(manifestUrl);
     } catch (error) {
       if (error instanceof WorkerError) throw error;
       if (error instanceof SyntaxError) {
         throw new WorkerError("data_integrity", "invalid_render_manifest", "Stored render manifest JSON is invalid", error);
       }
-      throw new WorkerError("external", "cloudinary_manifest_fetch", `Failed to fetch manifest JSON from ${record.secure_url}: ${error.message}`, error);
+      const code = error?.error?.http_code ?? error?.http_code ?? error?.statusCode ?? error?.status;
+      if (code === 404) return null;
+      throw new WorkerError("external", "cloudinary_manifest_fetch", `Failed to fetch manifest JSON from ${manifestUrl}: ${error.message}`, error);
     }
     validateStoredManifest(manifest);
     return { ...manifest, locator: `cloudinary://${runKey}` };

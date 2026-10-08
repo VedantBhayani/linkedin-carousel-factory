@@ -8,7 +8,7 @@ import { createCloudinaryAssetStore } from "../../src/adapters/cloudinary-assets
 import { WorkerError } from "../../src/worker/errors.js";
 
 function makeCloudinary() {
-  const calls = { upload: 0, resource: 0, resourceOptions: [] };
+  const calls = { upload: 0, resource: 0, resourceOptions: [], loadJsonUrls: [] };
   const objects = new Map();
   const api = {
     calls,
@@ -50,10 +50,13 @@ function makeCloudinary() {
     }
   };
   api.loadJson = async (secureUrl) => {
+    calls.loadJsonUrls.push(secureUrl);
     for (const record of objects.values()) {
       if (record.secure_url === secureUrl) return JSON.parse(record.raw);
     }
-    throw new Error(`unknown url ${secureUrl}`);
+    const error = new Error(`unknown url ${secureUrl}`);
+    error.status = 404;
+    throw error;
   };
   return api;
 }
@@ -207,9 +210,31 @@ test("loadManifest reloads a stored manifest by locator", async () => {
   assert.equal(reloaded.runKey, runKey);
   assert.equal(reloaded.files.slides.length, 8);
   const prefix = `carousel/test-001/${"a".repeat(64)}`;
-  assert.equal(cloudinary.calls.resourceOptions.at(-1).publicId, `${prefix}/carousel-manifest.json`);
-  assert.equal(cloudinary.calls.resourceOptions.at(-1).options.resource_type, "raw");
-  assert.equal(cloudinary.calls.resourceOptions.at(-1).options.type, "upload");
+  assert.equal(
+    cloudinary.calls.loadJsonUrls.at(-1),
+    `https://res.cloudinary.com/demo/raw/upload/${prefix}/carousel-manifest.json`
+  );
+  assert.equal(cloudinary.calls.resource, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("loadManifest uses the stable public delivery URL across worker processes", async () => {
+  const cloudinary = makeCloudinary();
+  const store = makeStore(cloudinary);
+  const runKey = "test-001:" + "a".repeat(64);
+  const { renderResult, files, dir } = writeRenderOutput();
+  const stored = await store.store(renderResult, manifestDraft(runKey, files));
+
+  cloudinary.api.resource = async () => {
+    const error = new Error("Admin API lookup missed the raw asset");
+    error.http_code = 404;
+    throw error;
+  };
+  const freshStore = makeStore(cloudinary);
+
+  const reloaded = await freshStore.loadManifest(stored.locator);
+  assert.equal(reloaded.runKey, runKey);
+  assert.equal(reloaded.files.pdf.name, "carousel.pdf");
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
