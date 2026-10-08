@@ -86,6 +86,20 @@ test("findEligible returns the first eligible row only", async () => {
   assert.equal(sheets.calls.get, 1);
 });
 
+test("findEligible ignores surrounding whitespace in lifecycle cells", async () => {
+  const retry = [...baseRow];
+  retry[0] = " live-001 ";
+  retry[2] = " render_retry \n";
+  retry[5] = " 2 ";
+  const sheets = makeSheets([retry]);
+  const queue = createSheetJobQueue({ sheets, spreadsheetId: "sheet-id", sheetName: "Sheet1" });
+
+  const job = await queue.findEligible(NOW);
+  assert.equal(job.jobId, "live-001");
+  assert.equal(job.status, "render_retry");
+  assert.equal(job.renderAttempts, 2);
+});
+
 test("findEligible returns null when no row is eligible", async () => {
   const done = [...baseRow];
   done[2] = "draft_created";

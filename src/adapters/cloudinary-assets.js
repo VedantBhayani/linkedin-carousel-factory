@@ -145,7 +145,7 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
       return { manifest: { ...manifest, locator }, locator };
     },
     async loadManifest(locator) {
-      const runKey = String(locator).replace(/^cloudinary:\/\//, "");
+      const runKey = String(locator).trim().replace(/^cloudinary:\/\/\s*/, "").trim();
       try {
         const manifest = await findManifest(runKey);
         if (!manifest) throw new Error("missing");

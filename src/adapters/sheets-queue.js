@@ -40,22 +40,23 @@ export function rowToJob(header, values, rowNumber, sheetName) {
     const index = header.indexOf(name);
     return index === -1 ? "" : (values[index] ?? "");
   };
+  const controlCell = (name) => String(cell(name)).trim();
   return {
-    jobId: cell("job_id"),
+    jobId: controlCell("job_id"),
     rowId: `${sheetName}!${rowNumber}`,
     postText: cell("post_text"),
-    status: cell("status"),
-    briefFile: cell("brief_file"),
-    carouselFile: cell("carousel_file"),
+    status: controlCell("status"),
+    briefFile: controlCell("brief_file"),
+    carouselFile: controlCell("carousel_file"),
     renderAttempts: parseAttempts(cell("render_attempts")),
     draftAttempts: parseAttempts(cell("draft_attempts")),
-    lockedAt: cell("locked_at"),
-    workerId: cell("worker_id"),
-    renderManifest: cell("render_manifest"),
-    bufferDraftId: cell("buffer_draft_id"),
-    bufferDraftUrl: cell("buffer_draft_url"),
+    lockedAt: controlCell("locked_at"),
+    workerId: controlCell("worker_id"),
+    renderManifest: controlCell("render_manifest"),
+    bufferDraftId: controlCell("buffer_draft_id"),
+    bufferDraftUrl: controlCell("buffer_draft_url"),
     error: cell("error"),
-    updatedAt: cell("updated_at")
+    updatedAt: controlCell("updated_at")
   };
 }
 

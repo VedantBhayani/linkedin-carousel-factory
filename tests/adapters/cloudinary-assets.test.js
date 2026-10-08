@@ -206,6 +206,18 @@ test("loadManifest reloads a stored manifest by locator", async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("loadManifest tolerates Sheet whitespace around the locator run key", async () => {
+  const cloudinary = makeCloudinary();
+  const store = makeStore(cloudinary);
+  const runKey = "test-001:" + "a".repeat(64);
+  const { renderResult, files, dir } = writeRenderOutput();
+  await store.store(renderResult, manifestDraft(runKey, files));
+
+  const reloaded = await store.loadManifest(` cloudinary:// ${runKey} \n`);
+  assert.equal(reloaded.runKey, runKey);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("loadManifest preserves typed Cloudinary fetch failures", async () => {
   const cloudinary = makeCloudinary();
   const store = makeStore(cloudinary);
