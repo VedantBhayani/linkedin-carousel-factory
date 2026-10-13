@@ -80,3 +80,30 @@ test("checkNextPayload reports a file the service account cannot see", async () 
   assert.equal(result.ok, false);
   assert.match(result.message, /404/);
 });
+
+// Shape of the real Sheet export from 2026-10-13: archived rows, and two finished rows
+// (test-003 draft_failed, live-001 draft_created) with identical post text.
+test("archived rows and duplicates among finished rows do not fail preflight", () => {
+  const rows = [
+    [...SHEET_COLUMNS],
+    rowFor({ job_id: "test-001", post_text: "Test post", status: "archived" }),
+    rowFor({ job_id: "test-003", post_text: "Same finished post", status: "draft_failed" }),
+    rowFor({ job_id: "live-001", post_text: "Same finished post", status: "draft_created" })
+  ];
+  const report = analyzeSheet(rows, NOW);
+  assert.equal(report.ok, true);
+  assert.deepEqual(report.rows[0].issues, []);
+  assert.deepEqual(report.duplicateGroups, [["Sheet1!3", "Sheet1!4"]]);
+  assert.match(formatReport(report), /duplicate post_text: Sheet1!3, Sheet1!4 \(all finished; informational\)/);
+});
+
+test("a duplicate that involves a row still in progress fails preflight", () => {
+  const rows = [
+    [...SHEET_COLUMNS],
+    rowFor({ job_id: "live-001", post_text: "Same post", status: "draft_created" }),
+    rowFor({ job_id: "copy-001", post_text: "Same post", status: "queued" })
+  ];
+  const report = analyzeSheet(rows, NOW);
+  assert.equal(report.ok, false);
+  assert.match(formatReport(report), /duplicate post_text: Sheet1!2, Sheet1!3 \(the worker will stop these rows\)/);
+});
