@@ -1,0 +1,9 @@
+Job ID: " live-001" (leading space preserved)
+Original status: queued
+Final status: brief_created
+File: Created new " live-001-brief-v1.json"
+Google Drive URL: Open JSON
+primaryType: contrarian
+Thesis: A launch video should make people care by showing their problem and the world after it is solved, while a product demo explains the mechanics.
+Errors: Upload trimmed the filename’s leading space; corrected and verified.
+Updated only row 6’s status and brief_file. Source post and job ID preserved.
