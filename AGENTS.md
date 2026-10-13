@@ -1,6 +1,6 @@
 # LinkedIn Carousel Factory
 
-Renders the approved eight-slide LinkedIn carousel to HTML, PDF, a cover JPEG, and eight PNG previews. See `README.md` for commands.
+Turns a Google Sheet post into an unpublished Buffer draft: two scheduled-task prompts (`prompts/`) write the brief and slide JSON, and a GitHub Actions worker renders the eight-slide carousel (HTML, PDF, cover JPEG, eight PNGs), stores it in Cloudinary, and creates the draft. See `README.md` for the pipeline and commands.
 
 ## Agent skills
 
