@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadProductionConfig, createProductionRunner, resolveStartupMode, secretValuesFor } from "../../src/worker/production.js";
+import { loadProductionConfig, createProductionRunner, resolveStartupMode, secretValuesFor, summarizeRun } from "../../src/worker/production.js";
 import { WorkerError, toSafeQueueError, clearSecretValues } from "../../src/worker/errors.js";
 
 const FULL_ENV = {
@@ -78,4 +78,19 @@ test("createProductionRunner registers credential values for redaction", () => {
   } finally {
     clearSecretValues();
   }
+});
+
+test("summarizeRun exits non-zero for a failed job so the workflow run turns red", () => {
+  const summary = summarizeRun({ outcome: "failed", error: "content_overflow", jobId: "live-001", stage: "render" });
+  assert.equal(summary.exitCode, 1);
+  assert.deepEqual(JSON.parse(summary.line), { outcome: "failed", error: "content_overflow", jobId: "live-001", stage: "render" });
+});
+
+test("summarizeRun names the job for successful and idle runs", () => {
+  const created = summarizeRun({ outcome: "draft_created", draft: { id: "d1" }, manifest: { jobId: "live-001" } });
+  assert.equal(created.exitCode, 0);
+  assert.deepEqual(JSON.parse(created.line), { outcome: "draft_created", error: null, jobId: "live-001", stage: "draft" });
+  const idle = summarizeRun({ outcome: "idle" });
+  assert.equal(idle.exitCode, 0);
+  assert.deepEqual(JSON.parse(idle.line), { outcome: "idle", error: null, jobId: null, stage: null });
 });

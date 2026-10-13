@@ -54,6 +54,8 @@ test("the worker marks an expired final-attempt lock as failed without any exter
 
   const updated = queue.getJob("Sheet1!2");
   assert.equal(result.outcome, "failed");
+  assert.equal(result.jobId, "job-1");
+  assert.equal(result.stage, "render");
   assert.equal(updated.status, "render_failed");
   assert.match(updated.error, /stale_lock_exhausted/);
   assert.equal(updated.workerId, "");

@@ -645,7 +645,7 @@ test("typed draft creation failures preserve the adapter error details", async (
     createWorkerId: () => "worker-test"
   });
 
-  assert.deepEqual(result, { outcome: "failed", error: "buffer_http_error" });
+  assert.deepEqual(result, { outcome: "failed", error: "buffer_http_error", jobId: "test-001", stage: "draft" });
   const updated = queue.getJob("Sheet1!2");
   assert.equal(updated.status, "draft_retry");
   assert.equal(updated.error, "external:buffer_http_error Buffer HTTP 401");

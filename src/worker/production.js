@@ -83,6 +83,19 @@ export function createProductionRunner(config) {
   });
 }
 
+const STAGE_BY_OUTCOME = { render_created: "render", draft_created: "draft" };
+
+// One machine-readable line per run. A failed job exits non-zero so the GitHub Actions
+// run turns red and GitHub's failure notification fires; before this every run was green.
+export function summarizeRun(result) {
+  const jobId = result.jobId ?? result.manifest?.jobId ?? null;
+  const stage = result.stage ?? STAGE_BY_OUTCOME[result.outcome] ?? null;
+  return {
+    line: JSON.stringify({ outcome: result.outcome, error: result.error ?? null, jobId, stage }),
+    exitCode: result.outcome === "failed" ? 1 : 0
+  };
+}
+
 export function resolveStartupMode(env = process.env) {
   const anySet = REQUIRED_ENV.some((key) => env[key]);
   return anySet ? { mode: "run" } : { mode: "skip" };
@@ -95,8 +108,9 @@ async function main() {
       return;
     }
     const run = createProductionRunner(loadProductionConfig());
-    const result = await run();
-    console.log(JSON.stringify({ outcome: result.outcome, error: result.error ?? null }));
+    const summary = summarizeRun(await run());
+    console.log(summary.line);
+    process.exitCode = summary.exitCode;
   } catch (error) {
     console.error(redactForLog(error instanceof WorkerError ? `${error.type}:${error.code} ${error.message}` : (error.stack || error.message)));
     process.exitCode = 1;

@@ -7,9 +7,13 @@ concurrency:
   group: carousel-production-worker
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   render:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7

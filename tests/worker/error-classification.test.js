@@ -151,7 +151,9 @@ test("a thrown plain object reaches the Sheet with its status and message", asyn
   const assets = createFakeAssetStore();
   assets.findManifest = async () => { throw cloudinaryAdminRejection(); };
 
-  const log = await captureConsoleError(() => runOnce({ queue, payload, assets }));
+  let result;
+  const log = await captureConsoleError(async () => { result = await runOnce({ queue, payload, assets }); });
+  assert.deepEqual({ outcome: result.outcome, jobId: result.jobId, stage: result.stage }, { outcome: "failed", jobId: "job-1", stage: "render" });
 
   const row = queue.getJob("Sheet1!2");
   assert.equal(row.status, "render_retry");

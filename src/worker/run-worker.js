@@ -30,7 +30,7 @@ async function runWorker({ ports, clock, createWorkerId }) {
     );
     console.error(`[worker] job=${eligibleJob.jobId} stage=${expiredStage} outcome=failed type=${error.type} code=${error.code}`);
     await handleFailure(eligibleJob, expiredStage, error, ports);
-    return { outcome: "failed", error: error.code };
+    return { outcome: "failed", error: error.code, jobId: eligibleJob.jobId, stage: expiredStage };
   }
 
   const stage = stageFor(eligibleJob, now);
@@ -79,7 +79,7 @@ async function runWorker({ ports, clock, createWorkerId }) {
       `shape=${redactForLog(safeStringify(error))}`
     );
     await handleFailure(activeJob, activeStage, safeError, ports);
-    return { outcome: "failed", error: safeError.code };
+    return { outcome: "failed", error: safeError.code, jobId: activeJob.jobId, stage: activeStage };
   }
 }
 
