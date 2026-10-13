@@ -5,7 +5,6 @@ import { WorkerError } from "../../src/worker/errors.js";
 import { createFakeQueue, createFakePayloadStore, createFakeRenderer, createFakeAssetStore, createFakeDraftService, createTestClock, createWorkerId } from "../helpers/fake-adapters.js";
 import { renderCarousel } from "../../src/render.js";
 
-const fixturePath = "E:/linkedin-carousel-factory/input/carousel.json";
 const driveBytes = new TextEncoder().encode(JSON.stringify({ jobId: "job-1", title: "Test", style: { family: "dark-editorial", accent: "electric-blue", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
 const driveBytesTest001 = new TextEncoder().encode(JSON.stringify({ jobId: "test-001", title: "Test", style: { family: "dark-editorial", accent: "electric-blue", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
 
@@ -229,7 +228,7 @@ test("renderer receives unique isolated paths", async () => {
   assert.ok(receivedInputPath.includes("worker-test"));
   assert.ok(receivedDistDir.includes("worker-test"));
   assert.ok(receivedInputPath.endsWith("test-001-carousel-v1.json"));
-  assert.notEqual(receivedInputPath, "E:/linkedin-carousel-factory/input/carousel.json");
+  assert.ok(!/[\\/]input[\\/]carousel\.json$/.test(receivedInputPath), "worker must not render the shared sample input");
 });
 
 test("existing manifest skips renderer and upload", async () => {
