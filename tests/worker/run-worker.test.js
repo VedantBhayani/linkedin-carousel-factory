@@ -5,7 +5,6 @@ import { WorkerError } from "../../src/worker/errors.js";
 import { createFakeQueue, createFakePayloadStore, createFakeRenderer, createFakeAssetStore, createFakeDraftService, createTestClock, createWorkerId } from "../helpers/fake-adapters.js";
 import { renderCarousel } from "../../src/render.js";
 
-const fixturePath = "E:/linkedin-carousel-factory/input/carousel.json";
 const driveBytes = new TextEncoder().encode(JSON.stringify({ jobId: "job-1", title: "Test", style: { family: "dark-editorial", accent: "electric-blue", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
 const driveBytesTest001 = new TextEncoder().encode(JSON.stringify({ jobId: "test-001", title: "Test", style: { family: "dark-editorial", accent: "electric-blue", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
 
@@ -229,7 +228,7 @@ test("renderer receives unique isolated paths", async () => {
   assert.ok(receivedInputPath.includes("worker-test"));
   assert.ok(receivedDistDir.includes("worker-test"));
   assert.ok(receivedInputPath.endsWith("test-001-carousel-v1.json"));
-  assert.notEqual(receivedInputPath, "E:/linkedin-carousel-factory/input/carousel.json");
+  assert.ok(!/[\\/]input[\\/]carousel\.json$/.test(receivedInputPath), "worker must not render the shared sample input");
 });
 
 test("existing manifest skips renderer and upload", async () => {
@@ -561,12 +560,12 @@ test("stored draft id is reconciled first", async () => {
   assert.equal(updated.bufferDraftUrl, "https://buffer.com/draft/stored-d1");
 });
 
-test("existing draft by run key is reused", async () => {
+test("existing draft with the job's exact post text is reused", async () => {
   const { manifest, locator } = await buildStoredManifest("test-001", driveBytesTest001);
   const assets = createFakeAssetStore();
   assets.addManifest(manifest.runKey, manifest);
   const drafts = createFakeDraftService();
-  drafts.addDraft({ id: "runkey-d1", url: "https://buffer.com/draft/runkey-d1", runKey: manifest.runKey, caption: "old", pdfUrl: "old" });
+  drafts.addDraft({ id: "runkey-d1", url: "https://buffer.com/draft/runkey-d1", runKey: manifest.runKey, caption: "exact unmodified post text", pdfUrl: "old" });
 
   const job = makeDraftOnlyJob({ renderManifest: locator });
   const queue = createFakeQueue([job]);
@@ -645,7 +644,7 @@ test("typed draft creation failures preserve the adapter error details", async (
     createWorkerId: () => "worker-test"
   });
 
-  assert.deepEqual(result, { outcome: "failed", error: "buffer_http_error" });
+  assert.deepEqual(result, { outcome: "failed", error: "buffer_http_error", jobId: "test-001", stage: "draft" });
   const updated = queue.getJob("Sheet1!2");
   assert.equal(updated.status, "draft_retry");
   assert.equal(updated.error, "external:buffer_http_error Buffer HTTP 401");
@@ -661,7 +660,7 @@ async function runWorkerOnce({ queue, payload, renderer, assets, drafts }) {
 
 test("render retry: attempt one failure becomes render_retry", async () => {
   const job = makeDraftOnlyJob({ status: "carousel_created", renderAttempts: 0, renderManifest: "" });
-  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", status: "carousel_created", renderAttempts: 0, renderManifest: "" });
+  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", postText: "a different post", status: "carousel_created", renderAttempts: 0, renderManifest: "" });
   const queue = createFakeQueue([job, other]);
   const payload = createFakePayloadStore();
 
@@ -794,7 +793,7 @@ test("configuration failure happens before any job is claimed", async () => {
 
 test("queue errors are sanitized and row-scoped", async () => {
   const job = makeDraftOnlyJob({ status: "carousel_created", renderAttempts: 0, renderManifest: "" });
-  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", status: "carousel_created" });
+  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", postText: "a different post", status: "carousel_created" });
   const queue = createFakeQueue([job, other]);
   const payload = createFakePayloadStore();
   const secretUrl = "https://drive.google.com/file/d/secret123/view?usp=sharing";

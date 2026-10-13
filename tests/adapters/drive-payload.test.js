@@ -83,3 +83,40 @@ test("download propagates provider failures without masking", async () => {
 
   await assert.rejects(store.download("https://drive.google.com/file/d/file123/view"), /drive timeout/);
 });
+
+test("download maps a Drive 404 to a terminal configuration error", async () => {
+  const drive = {
+    files: {
+      async get() {
+        throw Object.assign(new Error("File not found: file123."), { status: 404 });
+      }
+    }
+  };
+  const store = createDrivePayloadStore({ drive });
+
+  await assert.rejects(store.download("https://drive.google.com/file/d/file123/view"), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "configuration");
+    assert.equal(error.code, "drive_file_not_found");
+    return true;
+  });
+});
+
+test("download keeps the status of other Drive failures as retryable external errors", async () => {
+  const drive = {
+    files: {
+      async get() {
+        throw Object.assign(new Error("User rate limit exceeded"), { status: 403 });
+      }
+    }
+  };
+  const store = createDrivePayloadStore({ drive });
+
+  await assert.rejects(store.download("https://drive.google.com/file/d/file123/view"), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "external");
+    assert.equal(error.code, "drive_http_403");
+    assert.match(error.message, /User rate limit exceeded/);
+    return true;
+  });
+});

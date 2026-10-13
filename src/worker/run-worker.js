@@ -1,6 +1,6 @@
 import { assertWorkerPorts } from "./ports.js";
-import { stageFor, claimJob, failureTransition, MAX_STAGE_ATTEMPTS } from "./job-state.js";
-import { WorkerError, toSafeQueueError } from "./errors.js";
+import { stageFor, expiredLockStage, claimJob, failureTransition, MAX_STAGE_ATTEMPTS, SAFE_JOB_ID } from "./job-state.js";
+import { WorkerError, toSafeQueueError, toWorkerError, describeThrown, redactForLog } from "./errors.js";
 import { createRunKey, createManifestDraft, validateStoredManifest } from "./manifest.js";
 import { readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -18,6 +18,18 @@ async function runWorker({ ports, clock, createWorkerId }) {
   const eligibleJob = await JobQueue.findEligible(now);
   if (!eligibleJob) {
     return { outcome: "idle" };
+  }
+
+  const expiredStage = expiredLockStage(eligibleJob, now);
+  if (expiredStage) {
+    const error = new WorkerError(
+      "external",
+      "stale_lock_exhausted",
+      `The ${expiredStage} lock expired after the final attempt; the previous worker stopped without recording a result`
+    );
+    console.error(`[worker] job=${eligibleJob.jobId} stage=${expiredStage} outcome=failed type=${error.type} code=${error.code}`);
+    await handleFailure(eligibleJob, expiredStage, error, ports);
+    return { outcome: "failed", error: error.code, jobId: eligibleJob.jobId, stage: expiredStage };
   }
 
   const stage = stageFor(eligibleJob, now);
@@ -56,14 +68,17 @@ async function runWorker({ ports, clock, createWorkerId }) {
     const draftOut = await handleDraftStage(claimed, now, workerId, ports, (j) => { activeJob = j; });
     return draftOut;
   } catch (error) {
-    const safeError = error instanceof WorkerError ? error : new WorkerError("external", "unknown", error.message, error);
+    const safeError = toWorkerError(error);
+    const { status, message } = describeThrown(error);
+    // Status and message come before the shape: the shape is truncated to 500 characters
+    // and Cloudinary puts request_options ahead of the actual error.
     console.error(
-      `[worker] stage=${activeStage} outcome=failed type=${safeError.type} code=${safeError.code} ` +
-      `thrown=${error?.constructor?.name ?? typeof error} message=${redactForLog(error?.message)} ` +
+      `[worker] job=${activeJob?.jobId ?? ""} stage=${activeStage} outcome=failed type=${safeError.type} code=${safeError.code} ` +
+      `status=${status ?? ""} thrown=${error?.constructor?.name ?? typeof error} message=${redactForLog(message)} ` +
       `shape=${redactForLog(safeStringify(error))}`
     );
     await handleFailure(activeJob, activeStage, safeError, ports);
-    return { outcome: "failed", error: safeError.code };
+    return { outcome: "failed", error: safeError.code, jobId: activeJob.jobId, stage: activeStage };
   }
 }
 
@@ -83,19 +98,23 @@ function safeStringify(value) {
   }
 }
 
-function redactForLog(message) {  return String(message ?? "")
-    .replace(/https?:\/\/[^\s"']+/g, "[url]")
-    .replace(/ya29\.[A-Za-z0-9-_]+/g, "[token]")
-    .replace(/-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----/g, "[key]")
-    .slice(0, 500);
-}
-
 async function handleRenderStage(job, now, workerId, ports) {
   const { JobQueue, PayloadStore, CarouselRenderer, AssetStore } = ports;
 
+  // The canonical job id is the trimmed Sheet value. It becomes part of Cloudinary
+  // public IDs and the run key, so only path-safe characters are accepted.
+  const jobId = String(job.jobId ?? "").trim();
+  if (!SAFE_JOB_ID.test(jobId)) {
+    throw new WorkerError("validation", "invalid_job_id", "Job id must contain only letters, digits, hyphens, or underscores");
+  }
+
+  assertUniquePostText(job);
+
   const downloadResult = await PayloadStore.download(job.carouselFile);
-  const expectedFileName = `${job.jobId}-carousel-v1.json`;
-  if (downloadResult.fileName !== expectedFileName) {
+  const expectedFileName = `${jobId}-carousel-v1.json`;
+  // Drive and the scheduled task have both produced whitespace-padded names and ids
+  // for the same job (live-001), so surrounding whitespace is not significant.
+  if (String(downloadResult.fileName ?? "").trim() !== expectedFileName) {
     throw new WorkerError("validation", "invalid_filename", `Expected ${expectedFileName}, got ${downloadResult.fileName}`);
   }
 
@@ -106,11 +125,11 @@ async function handleRenderStage(job, now, workerId, ports) {
     throw new WorkerError("validation", "invalid_json", "Carousel JSON parse failed");
   }
 
-  if (carousel.jobId !== job.jobId) {
-    throw new WorkerError("validation", "jobid_mismatch", `JSON jobId ${carousel.jobId} != queue jobId ${job.jobId}`);
+  if (typeof carousel?.jobId !== "string" || carousel.jobId.trim() !== jobId) {
+    throw new WorkerError("validation", "jobid_mismatch", `JSON jobId ${carousel?.jobId} != queue jobId ${jobId}`);
   }
 
-  const runKey = createRunKey(job.jobId, downloadResult.bytes);
+  const runKey = createRunKey(jobId, downloadResult.bytes);
   const existingManifest = await AssetStore.findManifest(runKey);
   if (existingManifest) {
     await JobQueue.persistState(job.rowId, {
@@ -135,7 +154,7 @@ async function handleRenderStage(job, now, workerId, ports) {
     const renderResult = await CarouselRenderer.render({ inputPath, distDir });
     
     const manifestDraft = await createManifestDraft({
-      jobId: job.jobId,
+      jobId,
       payloadBytes: downloadResult.bytes,
       outputs: {
         pdf: { name: "carousel.pdf", bytes: readFileSync(renderResult.pdf) },
@@ -200,6 +219,10 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
     );
   }
 
+  // Without a stored draft id the draft can only be found by caption, which is ambiguous
+  // when another row has the same post text.
+  if (!draftJob.bufferDraftId) assertUniquePostText(draftJob);
+
   const existingDraft = await DraftService.findDraft({
     runKey: manifest.runKey,
     storedDraftId: draftJob.bufferDraftId,
@@ -241,7 +264,18 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
     if (error instanceof WorkerError) {
       throw error;
     }
-    throw new WorkerError("external", "buffer_create_failed", "Failed to create Buffer draft", error);
+    throw new WorkerError("external", "buffer_create_failed", `Failed to create Buffer draft: ${describeThrown(error).message}`, error);
+  }
+}
+
+function assertUniquePostText(job) {
+  const duplicates = job.duplicatePostTextRowIds ?? [];
+  if (duplicates.length > 0) {
+    throw new WorkerError(
+      "validation",
+      "duplicate_post_text",
+      `post_text is identical to ${duplicates.join(", ")}; a human must make it unique or remove the duplicate row`
+    );
   }
 }
 

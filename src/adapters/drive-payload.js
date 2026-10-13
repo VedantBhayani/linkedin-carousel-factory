@@ -1,4 +1,15 @@
-import { WorkerError } from "../worker/errors.js";
+import { WorkerError, describeThrown } from "../worker/errors.js";
+
+// A 404 means the file is missing or not shared with the service account; retrying cannot
+// fix that. Drive also answers rate limits with 403, so every other status stays retryable.
+function toDriveError(error) {
+  if (error instanceof WorkerError) return error;
+  const { status, message } = describeThrown(error);
+  if (status === 404) {
+    return new WorkerError("configuration", "drive_file_not_found", `Drive file not found or not shared with the service account: ${message}`, error);
+  }
+  return new WorkerError("external", status === null ? "drive_request_failed" : `drive_http_${status}`, message, error);
+}
 
 export function extractDriveFileId(carouselFile) {
   if (typeof carouselFile !== "string") return null;
@@ -20,16 +31,20 @@ export function createDrivePayloadStore({ drive }) {
       if (!fileId) {
         throw new WorkerError("validation", "invalid_file_reference", "Carousel file reference is not a Drive file");
       }
-      const meta = await drive.files.get({
-        fileId,
-        fields: "id,name,mimeType",
-        supportsAllDrives: true
-      });
-      const media = await drive.files.get(
-        { fileId, alt: "media", supportsAllDrives: true },
-        { responseType: "arraybuffer" }
-      );
-      return { fileName: meta.data.name, bytes: Buffer.from(media.data) };
+      try {
+        const meta = await drive.files.get({
+          fileId,
+          fields: "id,name,mimeType",
+          supportsAllDrives: true
+        });
+        const media = await drive.files.get(
+          { fileId, alt: "media", supportsAllDrives: true },
+          { responseType: "arraybuffer" }
+        );
+        return { fileName: meta.data.name, bytes: Buffer.from(media.data) };
+      } catch (error) {
+        throw toDriveError(error);
+      }
     }
   };
 }

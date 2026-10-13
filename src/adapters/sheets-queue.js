@@ -1,4 +1,5 @@
-import { stageFor } from "../worker/job-state.js";
+import { isActionable, findDuplicatePostTextRows } from "../worker/job-state.js";
+import { WorkerError } from "../worker/errors.js";
 
 export const SHEET_COLUMNS = [
   "job_id",
@@ -16,6 +17,9 @@ export const SHEET_COLUMNS = [
   "error",
   "updated_at"
 ];
+
+// Columns the worker reads or writes. brief_file belongs to the scheduled task only.
+const REQUIRED_COLUMNS = SHEET_COLUMNS.filter((name) => name !== "brief_file");
 
 const CANONICAL_TO_COLUMN = {
   status: "status",
@@ -71,9 +75,29 @@ function columnLetter(index) {
   return letter;
 }
 
-export function createSheetJobQueue({ sheets, spreadsheetId, sheetName }) {
+function columnIndexes(header) {
+  const normalized = header.map((name) => String(name).trim());
+  const missing = REQUIRED_COLUMNS.filter((name) => !normalized.includes(name));
+  if (missing.length > 0) {
+    throw new WorkerError("configuration", "missing_sheet_header", `Sheet header row is missing: ${missing.join(", ")}`);
+  }
+  return Object.fromEntries(REQUIRED_COLUMNS.map((name) => [name, normalized.indexOf(name)]));
+}
+
+export function createSheetJobQueue({ sheets, spreadsheetId, sheetName, clock = { now: () => new Date() } }) {
   if (!sheets || !spreadsheetId || !sheetName) {
     throw new Error("sheets client, spreadsheetId, and sheetName are required");
+  }
+
+  // Writes are addressed by header name, so inserting or reordering Sheet columns cannot
+  // send a value into the wrong cell. The header from this run's scan is reused.
+  let indexes = null;
+
+  async function loadIndexes() {
+    if (indexes) return indexes;
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${sheetName}!1:1` });
+    indexes = columnIndexes(response.data.values?.[0] ?? []);
+    return indexes;
   }
 
   async function readAll() {
@@ -88,11 +112,13 @@ export function createSheetJobQueue({ sheets, spreadsheetId, sheetName }) {
     const match = /^(.+)!(\d+)$/.exec(rowId);
     if (!match) throw new Error(`Invalid rowId: ${rowId}`);
     const [, sheet, rowNumber] = match;
+    const columns = await loadIndexes();
     const data = [];
-    for (const [canonical, value] of Object.entries(updates)) {
+    const stamped = { ...updates, updatedAt: clock.now().toISOString() };
+    for (const [canonical, value] of Object.entries(stamped)) {
       const column = CANONICAL_TO_COLUMN[canonical];
       if (!column) continue;
-      const index = SHEET_COLUMNS.indexOf(column);
+      const index = columns[column];
       data.push({
         range: `${sheet}!${columnLetter(index)}${rowNumber}`,
         values: [[String(value ?? "")]]
@@ -108,12 +134,16 @@ export function createSheetJobQueue({ sheets, spreadsheetId, sheetName }) {
   return {
     async findEligible(now = new Date()) {
       const rows = await readAll();
-      if (rows.length < 2) return null;
+      if (rows.length === 0) return null;
       const header = rows[0];
-      for (let i = 1; i < rows.length; i += 1) {
-        const job = rowToJob(header, rows[i], i + 1, sheetName);
+      indexes = columnIndexes(header);
+      if (rows.length < 2) return null;
+      const jobs = rows.slice(1).map((values, i) => rowToJob(header, values, i + 2, sheetName));
+      for (const job of jobs) {
         if (!job.jobId) continue;
-        if (stageFor(job, now) !== null) return job;
+        if (isActionable(job, now)) {
+          return { ...job, duplicatePostTextRowIds: findDuplicatePostTextRows(job, jobs) };
+        }
       }
       return null;
     },

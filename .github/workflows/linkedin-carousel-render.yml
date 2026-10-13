@@ -2,14 +2,26 @@ name: Render LinkedIn Carousel
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "run = process at most one job; preflight = read-only check of the Sheet and the next Drive file"
+        type: choice
+        options:
+          - run
+          - preflight
+        default: run
 
 concurrency:
   group: carousel-production-worker
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   render:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -24,13 +36,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Preflight (read-only)
+        if: inputs.mode == 'preflight'
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_SPREADSHEET_ID: ${{ secrets.SHEET_SPREADSHEET_ID }}
+          SHEET_NAME: Sheet1
+        run: npm run preflight
+
       - name: Install Chromium
+        if: inputs.mode != 'preflight'
         run: npx playwright install --with-deps chromium
 
       - name: Test and render
+        if: inputs.mode != 'preflight'
         run: npm test
 
       - name: Run production worker
+        if: inputs.mode != 'preflight'
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SHEET_SPREADSHEET_ID: ${{ secrets.SHEET_SPREADSHEET_ID }}

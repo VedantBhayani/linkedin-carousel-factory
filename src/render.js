@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { buildDocument } from "./document.js";
 import { loadEmbeddedFontCss } from "./fonts.js";
+import { WorkerError } from "./worker/errors.js";
 
 async function findClipping(page) {
   return page.evaluate(() => {
@@ -22,7 +23,18 @@ async function findClipping(page) {
           [style.overflowX, style.overflowY].some((value) => ["hidden", "clip", "auto", "scroll"].includes(value));
         const scrollClips = clipsOwnContent &&
           (element.scrollWidth > element.clientWidth + tolerance || element.scrollHeight > element.clientHeight + tolerance);
-        if (!decorative && ((outside && rect.width > 0 && rect.height > 0) || scrollClips)) {
+        // An element's box can sit inside the slide while its text spills past it; the
+        // slide's overflow: hidden then cuts the text off silently. Measure the text itself.
+        let textOutside = false;
+        if (element !== slide && !decorative && [...element.childNodes].some((node) => node.nodeType === 3 && node.textContent.trim())) {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          const textRect = range.getBoundingClientRect();
+          textOutside = textRect.width > 0 && textRect.height > 0 && (
+            textRect.left < slideRect.left - tolerance || textRect.top < slideRect.top - tolerance ||
+            textRect.right > slideRect.right + tolerance || textRect.bottom > slideRect.bottom + tolerance);
+        }
+        if (!decorative && ((outside && rect.width > 0 && rect.height > 0) || scrollClips || textOutside)) {
           issues.push({
             slide: slideIndex + 1,
             tag: element.tagName.toLowerCase(),
@@ -30,6 +42,7 @@ async function findClipping(page) {
             text: (element.textContent || "").trim().slice(0, 80),
             outside,
             scrollClips,
+            textOutside,
             overflow: style.overflow
           });
         }
@@ -51,7 +64,12 @@ export async function renderCarousel({ inputPath, distDir }) {
   const carousel = readJson(inputPath);
   const cssPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "styles", "dark-editorial.css");
   const css = fs.readFileSync(cssPath, "utf8");
-  const html = buildDocument(carousel, css, loadEmbeddedFontCss());
+  let html;
+  try {
+    html = buildDocument(carousel, css, loadEmbeddedFontCss());
+  } catch (error) {
+    throw new WorkerError("validation", "invalid_carousel", error.message, error);
+  }
 
   fs.rmSync(distDir, { recursive: true, force: true });
   fs.mkdirSync(distDir, { recursive: true });
@@ -72,7 +90,10 @@ export async function renderCarousel({ inputPath, distDir }) {
 
     const clipping = await findClipping(page);
     if (clipping.length) {
-      throw new Error(`Detected clipped or overflowing content:\n${JSON.stringify(clipping, null, 2)}`);
+      // Name slides and elements only; the slide copy itself stays out of errors and logs.
+      const where = [...new Set(clipping.map((issue) =>
+        `slide ${issue.slide} (${issue.tag}${issue.className ? `.${String(issue.className).split(/\s+/)[0]}` : ""})`))];
+      throw new WorkerError("validation", "content_overflow", `Content is clipped or overflows on ${where.join(", ")}`);
     }
 
     for (let index = 0; index < slideCount; index += 1) {

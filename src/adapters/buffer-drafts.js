@@ -26,8 +26,8 @@ const FIND_ORGANIZATIONS_QUERY = `query FindOrganizations {
   }
 }`;
 
-const FIND_CHANNEL_DRAFTS_QUERY = `query FindChannelDrafts($organizationId: OrganizationId!, $channelId: ChannelId!) {
-  posts(input: {
+const FIND_CHANNEL_DRAFTS_QUERY = `query FindChannelDrafts($organizationId: OrganizationId!, $channelId: ChannelId!, $after: String) {
+  posts(after: $after, input: {
     organizationId: $organizationId
     sort: [{ field: createdAt, direction: desc }]
     filter: { status: [draft], channelIds: [$channelId] }
@@ -35,8 +35,12 @@ const FIND_CHANNEL_DRAFTS_QUERY = `query FindChannelDrafts($organizationId: Orga
     edges {
       node { id text status externalLink channelId }
     }
+    pageInfo { hasNextPage endCursor }
   }
 }`;
+
+// Upper bound on pages read while reconciling, so a cursor that never ends cannot loop forever.
+const MAX_DRAFT_PAGES = 50;
 
 export function createBufferDraftService({ fetch: fetchImpl = fetch, apiKey, channelId } = {}) {
   if (!fetchImpl) throw new WorkerError("configuration", "missing_fetch", "A fetch implementation is required");
@@ -83,20 +87,40 @@ export function createBufferDraftService({ fetch: fetchImpl = fetch, apiKey, cha
         return toDraftResult(post);
       }
 
+      // Buffer has no idempotency key or run-key field on posts, so an unrecorded draft can
+      // only be recognised by its exact text. Every page is read and more than one match is
+      // refused rather than guessed.
       const accountData = await postGraphql(FIND_ORGANIZATIONS_QUERY, {});
       const organizations = accountData?.data?.account?.organizations ?? [];
+      const matches = [];
       for (const organization of organizations) {
-        const data = await postGraphql(FIND_CHANNEL_DRAFTS_QUERY, {
-          organizationId: organization.id,
-          channelId
-        });
-        const posts = (data?.data?.posts?.edges ?? []).map((edge) => edge?.node).filter(Boolean);
-        const match = posts.find((post) =>
-          post.status === "draft" && post.channelId === channelId && post.text === caption
-        );
-        if (match) return toDraftResult(match);
+        let after = null;
+        for (let page = 0; ; page += 1) {
+          if (page >= MAX_DRAFT_PAGES) {
+            throw new AmbiguousExternalError("buffer_draft_scan_incomplete", `Buffer draft list exceeded ${MAX_DRAFT_PAGES} pages`);
+          }
+          const data = await postGraphql(FIND_CHANNEL_DRAFTS_QUERY, {
+            organizationId: organization.id,
+            channelId,
+            after
+          });
+          const posts = (data?.data?.posts?.edges ?? []).map((edge) => edge?.node).filter(Boolean);
+          matches.push(...posts.filter((post) =>
+            post.status === "draft" && post.channelId === channelId && post.text === caption
+          ));
+          const pageInfo = data?.data?.posts?.pageInfo;
+          if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
+          after = pageInfo.endCursor;
+        }
       }
-      return null;
+      if (matches.length > 1) {
+        throw new WorkerError(
+          "data_integrity",
+          "multiple_matching_drafts",
+          `${matches.length} Buffer drafts have this caption; a human must keep one and record its id`
+        );
+      }
+      return matches.length === 1 ? toDraftResult(matches[0]) : null;
     },
 
     async createDraft({ runKey, caption, pdfUrl, coverUrl }) {

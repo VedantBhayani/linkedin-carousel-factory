@@ -176,3 +176,17 @@ test("persistState writes render manifest and draft fields", async () => {
   assert.equal(ranges["Sheet1!K2"], "d1");
   assert.equal(ranges["Sheet1!L2"], "https://buffer.com/draft/d1");
 });
+
+test("findEligible reports other rows with the same post text", async () => {
+  const duplicate = [...baseRow];
+  duplicate[0] = "test-003";
+  duplicate[1] = "  full source post text ";
+  duplicate[2] = "draft_created";
+  const sheets = makeSheets([baseRow, duplicate]);
+  const queue = createSheetJobQueue({ sheets, spreadsheetId: "sheet-id", sheetName: "Sheet1" });
+
+  const job = await queue.findEligible(NOW);
+
+  assert.equal(job.rowId, "Sheet1!2");
+  assert.deepEqual(job.duplicatePostTextRowIds, ["Sheet1!3"]);
+});

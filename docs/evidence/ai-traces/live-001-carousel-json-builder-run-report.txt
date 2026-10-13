@@ -1,0 +1,10 @@
+Job ID: " live-001" (leading space preserved)
+Row: 6 in “Test sheet” → “Sheet1”
+Original status: brief_created
+Final status: carousel_created
+File: Newly created " live-001-carousel-v1.json"
+Drive URL: Open carousel JSON
+Slides: 8, validated before saving
+Layout sequence: editorial-hook → framework-overview → statement → framework-overview → statement → statement → comparison → closing
+Errors: Upload trimmed the filename’s leading space; corrected and verified before completing the row.
+Only row 6 was updated. The source post and job ID were preserved.

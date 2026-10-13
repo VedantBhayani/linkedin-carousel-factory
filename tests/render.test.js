@@ -106,3 +106,23 @@ test("renders eight correctly sized slides, cover, HTML, and PDF", async () => {
     await browser.close();
   }
 });
+
+test("overflowing copy fails as a typed validation error that names the slide", async () => {
+  const { renderCarousel } = await import("../src/render.js");
+  const { WorkerError } = await import("../src/worker/errors.js");
+  const carousel = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+  // One unbreakable word cannot wrap, so it overflows the 1080px slide horizontally.
+  carousel.slides[2] = { layout: "statement", headline: "W".repeat(80) };
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "carousel-overflow-"));
+  const inputPath = path.join(temp, "overflow.json");
+  fs.writeFileSync(inputPath, JSON.stringify(carousel));
+
+  await assert.rejects(renderCarousel({ inputPath, distDir: path.join(temp, "output") }), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "validation");
+    assert.equal(error.code, "content_overflow");
+    assert.match(error.message, /slide 3/);
+    assert.ok(!error.message.includes("WWWW"), "copy must not be echoed into the error");
+    return true;
+  });
+});

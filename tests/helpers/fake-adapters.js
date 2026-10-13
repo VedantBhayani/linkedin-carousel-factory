@@ -1,6 +1,17 @@
+import { isActionable, findDuplicatePostTextRows } from "../../src/worker/job-state.js";
+
 export function createFakeQueue(initialJobs = []) {
   const jobs = new Map(initialJobs.map((j) => [j.rowId, { ...j }]));
   const calls = { findEligible: 0, persistClaim: 0, persistState: 0 };
+
+  // Same eligibility rule as the Sheet adapter, so worker tests cannot pass on rows
+  // production would never pick up.
+  function findFirstEligible(now) {
+    for (const job of jobs.values()) {
+      if (isActionable(job, now)) return { ...job };
+    }
+    return null;
+  }
 
   return {
     calls,
@@ -9,21 +20,8 @@ export function createFakeQueue(initialJobs = []) {
     },
     async findEligible(now = new Date()) {
       calls.findEligible++;
-      for (const job of jobs.values()) {
-        if (job.status === "carousel_created" || job.status === "render_retry") {
-          return { ...job };
-        }
-        if (job.status === "rendering" || job.status === "drafting") {
-          const lockTime = new Date(job.lockedAt).getTime();
-          if (!isNaN(lockTime) && now.getTime() - lockTime >= 30 * 60 * 1000) {
-            return { ...job };
-          }
-        }
-        if (job.status === "render_created" || job.status === "draft_retry") {
-          return { ...job };
-        }
-      }
-      return null;
+      const found = findFirstEligible(now);
+      return found ? { ...found, duplicatePostTextRowIds: findDuplicatePostTextRows(found, [...jobs.values()]) } : null;
     },
     async persistClaim(rowId, updates) {
       calls.persistClaim++;
@@ -146,15 +144,19 @@ export function createFakeDraftService(drafts = new Map()) {
     lastCreate: null,
     ambiguousOnCreate: false,
     createError: null,
-    async findDraft({ runKey, storedDraftId }) {
+    // Mirrors the production Buffer adapter: a stored draft id is authoritative, otherwise
+    // drafts are matched on exact caption text, because Buffer stores no run key.
+    async findDraft({ storedDraftId, caption }) {
       calls.findDraft++;
-      if (storedDraftId && drafts.has(storedDraftId)) {
-        return drafts.get(storedDraftId);
+      if (storedDraftId) {
+        return drafts.get(storedDraftId) ?? null;
       }
-      for (const draft of drafts.values()) {
-        if (draft.runKey === runKey) return draft;
+      if (!caption) return null;
+      const matches = [...drafts.values()].filter((draft) => draft.caption === caption);
+      if (matches.length > 1) {
+        throw new WorkerError("data_integrity", "multiple_matching_drafts", `${matches.length} Buffer drafts have this caption`);
       }
-      return null;
+      return matches[0] ?? null;
     },
     async createDraft({ runKey, caption, pdfUrl, coverUrl }) {
       calls.createDraft++;
