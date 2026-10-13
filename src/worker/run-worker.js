@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..", "..");
+const SAFE_JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 async function runWorker({ ports, clock, createWorkerId }) {
   assertWorkerPorts(ports);
@@ -93,9 +94,18 @@ function redactForLog(message) {  return String(message ?? "")
 async function handleRenderStage(job, now, workerId, ports) {
   const { JobQueue, PayloadStore, CarouselRenderer, AssetStore } = ports;
 
+  // The canonical job id is the trimmed Sheet value. It becomes part of Cloudinary
+  // public IDs and the run key, so only path-safe characters are accepted.
+  const jobId = String(job.jobId ?? "").trim();
+  if (!SAFE_JOB_ID.test(jobId)) {
+    throw new WorkerError("validation", "invalid_job_id", "Job id must contain only letters, digits, hyphens, or underscores");
+  }
+
   const downloadResult = await PayloadStore.download(job.carouselFile);
-  const expectedFileName = `${job.jobId}-carousel-v1.json`;
-  if (downloadResult.fileName !== expectedFileName) {
+  const expectedFileName = `${jobId}-carousel-v1.json`;
+  // Drive and the scheduled task have both produced whitespace-padded names and ids
+  // for the same job (live-001), so surrounding whitespace is not significant.
+  if (String(downloadResult.fileName ?? "").trim() !== expectedFileName) {
     throw new WorkerError("validation", "invalid_filename", `Expected ${expectedFileName}, got ${downloadResult.fileName}`);
   }
 
@@ -106,11 +116,11 @@ async function handleRenderStage(job, now, workerId, ports) {
     throw new WorkerError("validation", "invalid_json", "Carousel JSON parse failed");
   }
 
-  if (carousel.jobId !== job.jobId) {
-    throw new WorkerError("validation", "jobid_mismatch", `JSON jobId ${carousel.jobId} != queue jobId ${job.jobId}`);
+  if (typeof carousel?.jobId !== "string" || carousel.jobId.trim() !== jobId) {
+    throw new WorkerError("validation", "jobid_mismatch", `JSON jobId ${carousel?.jobId} != queue jobId ${jobId}`);
   }
 
-  const runKey = createRunKey(job.jobId, downloadResult.bytes);
+  const runKey = createRunKey(jobId, downloadResult.bytes);
   const existingManifest = await AssetStore.findManifest(runKey);
   if (existingManifest) {
     await JobQueue.persistState(job.rowId, {
@@ -135,7 +145,7 @@ async function handleRenderStage(job, now, workerId, ports) {
     const renderResult = await CarouselRenderer.render({ inputPath, distDir });
     
     const manifestDraft = await createManifestDraft({
-      jobId: job.jobId,
+      jobId,
       payloadBytes: downloadResult.bytes,
       outputs: {
         pdf: { name: "carousel.pdf", bytes: readFileSync(renderResult.pdf) },
