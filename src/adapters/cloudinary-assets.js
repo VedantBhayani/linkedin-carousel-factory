@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { v2 as cloudinarySdk } from "cloudinary";
-import { WorkerError } from "../worker/errors.js";
+import { WorkerError, describeThrown } from "../worker/errors.js";
 import { validateStoredManifest } from "../worker/manifest.js";
 
 const MIME_TYPES = {
@@ -10,6 +10,12 @@ const MIME_TYPES = {
   ".pdf": "application/pdf",
   ".json": "application/json"
 };
+
+function toCloudinaryError(error) {
+  if (error instanceof WorkerError) return error;
+  const { status, message } = describeThrown(error);
+  return new WorkerError("external", status === null ? "cloudinary_request_failed" : `cloudinary_http_${status}`, message, error);
+}
 
 function extensionOf(fileName) {
   const dot = fileName.lastIndexOf(".");
@@ -68,25 +74,40 @@ export function createCloudinaryAssetStore({ cloudinary, cloudName, apiKey, apiS
     return cloudinarySdk;
   })();
 
+  // Cloudinary only reports byte size for an existing asset, so reuse is checked by size,
+  // not by digest. A same-size asset with different content would be reused.
+  function assertReusable(existing, bytes, displayName) {
+    if (existing.bytes === bytes.length) return existing;
+    throw new WorkerError("asset_conflict", "asset_conflict", `Asset size mismatch for ${displayName}`);
+  }
+
   async function uploadOrReuse(publicId, resourceType, bytes, displayName) {
     const dataUri = `data:${MIME_TYPES[extensionOf(displayName)] ?? "application/octet-stream"};base64,${bytes.toString("base64")}`;
+    let uploaded;
     try {
-      const uploaded = await client.uploader.upload(dataUri, {
+      uploaded = await client.uploader.upload(dataUri, {
         public_id: publicId,
         resource_type: resourceType,
         overwrite: false,
         unique_filename: false
       });
-      return uploaded;
     } catch (error) {
-      if (error?.http_code !== 400) throw error;
-      const existing = await client.api.resource(publicId, {
-        resource_type: resourceType,
-        type: "upload"
-      });
-      if (existing.bytes === bytes.length) return existing;
-      throw new WorkerError("asset_conflict", "asset_conflict", `Asset digest mismatch for ${displayName}`);
+      if (describeThrown(error).status !== 400) throw toCloudinaryError(error);
+      let existing;
+      try {
+        existing = await client.api.resource(publicId, {
+          resource_type: resourceType,
+          type: "upload"
+        });
+      } catch (lookupError) {
+        throw toCloudinaryError(lookupError);
+      }
+      return assertReusable(existing, bytes, displayName);
     }
+    // With overwrite off, Cloudinary documents that "a response is returned immediately if an
+    // asset with the same public ID is found" and flags it as existing instead of failing.
+    if (uploaded?.existing === true) return assertReusable(uploaded, bytes, displayName);
+    return uploaded;
   }
 
   async function findManifest(runKey) {

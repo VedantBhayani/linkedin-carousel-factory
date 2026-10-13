@@ -319,3 +319,41 @@ test("loadManifest rejects unknown locators as data-integrity errors", async () 
     return true;
   });
 });
+
+test("store turns Cloudinary SDK rejections into typed errors with the HTTP status", async () => {
+  const cloudinary = makeCloudinary();
+  cloudinary.uploader.upload = async () => {
+    throw { message: "Invalid Signature abc. String to sign - 'public_id=x&timestamp=1'.", http_code: 401, name: "Error" };
+  };
+  const store = makeStore(cloudinary);
+  const { renderResult, files } = writeRenderOutput();
+
+  await assert.rejects(store.store(renderResult, manifestDraft(`test-001:${"b".repeat(64)}`, files)), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "external");
+    assert.equal(error.code, "cloudinary_http_401");
+    assert.match(error.message, /Invalid Signature/);
+    return true;
+  });
+});
+
+test("store treats an existing asset returned with overwrite off as a reuse candidate and checks its size", async () => {
+  const cloudinary = makeCloudinary();
+  // Cloudinary documents that with overwrite=false "a response is returned immediately if an
+  // asset with the same public ID is found"; it is not an HTTP 400.
+  cloudinary.uploader.upload = async (data, options) => ({
+    public_id: options.public_id,
+    secure_url: `https://res.cloudinary.com/demo/${options.resource_type}/upload/${options.public_id}`,
+    bytes: 1,
+    existing: true
+  });
+  const store = makeStore(cloudinary);
+  const { renderResult, files } = writeRenderOutput();
+
+  await assert.rejects(store.store(renderResult, manifestDraft(`test-001:${"d".repeat(64)}`, files)), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "asset_conflict");
+    assert.match(error.message, /size mismatch for carousel\.pdf/);
+    return true;
+  });
+});

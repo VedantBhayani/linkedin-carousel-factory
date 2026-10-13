@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadProductionConfig, createProductionRunner, resolveStartupMode } from "../../src/worker/production.js";
-import { WorkerError } from "../../src/worker/errors.js";
+import { loadProductionConfig, createProductionRunner, resolveStartupMode, secretValuesFor } from "../../src/worker/production.js";
+import { WorkerError, toSafeQueueError, clearSecretValues } from "../../src/worker/errors.js";
 
 const FULL_ENV = {
   GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "worker@example.iam.gserviceaccount.com", private_key: "fake-key" }),
@@ -57,4 +57,25 @@ test("resolveStartupMode skips when no production variables are set", () => {
 
 test("resolveStartupMode runs when any production variable is set", () => {
   assert.deepEqual(resolveStartupMode({ GOOGLE_SERVICE_ACCOUNT_JSON: "x" }), { mode: "run" });
+});
+
+test("secretValuesFor lists every credential value, including the service account key", () => {
+  const env = {
+    ...FULL_ENV,
+    GOOGLE_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: "w@example.com", private_key: "-----BEGIN PRIVATE KEY-----abc", private_key_id: "kid-123456" })
+  };
+  const values = secretValuesFor(loadProductionConfig(env));
+  for (const expected of ["key", "secret", "buffer-key", "-----BEGIN PRIVATE KEY-----abc", "kid-123456"]) {
+    assert.ok(values.includes(expected), expected);
+  }
+});
+
+test("createProductionRunner registers credential values for redaction", () => {
+  try {
+    createProductionRunner(loadProductionConfig({ ...FULL_ENV, BUFFER_API_KEY: "buffer-key-987" }));
+    const safe = toSafeQueueError(new WorkerError("external", "http_401", "rejected key buffer-key-987"));
+    assert.ok(!safe.message.includes("buffer-key-987"));
+  } finally {
+    clearSecretValues();
+  }
 });

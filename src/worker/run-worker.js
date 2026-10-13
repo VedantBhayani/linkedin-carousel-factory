@@ -1,6 +1,6 @@
 import { assertWorkerPorts } from "./ports.js";
 import { stageFor, claimJob, failureTransition, MAX_STAGE_ATTEMPTS } from "./job-state.js";
-import { WorkerError, toSafeQueueError } from "./errors.js";
+import { WorkerError, toSafeQueueError, toWorkerError, describeThrown, redactForLog } from "./errors.js";
 import { createRunKey, createManifestDraft, validateStoredManifest } from "./manifest.js";
 import { readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -57,10 +57,13 @@ async function runWorker({ ports, clock, createWorkerId }) {
     const draftOut = await handleDraftStage(claimed, now, workerId, ports, (j) => { activeJob = j; });
     return draftOut;
   } catch (error) {
-    const safeError = error instanceof WorkerError ? error : new WorkerError("external", "unknown", error.message, error);
+    const safeError = toWorkerError(error);
+    const { status, message } = describeThrown(error);
+    // Status and message come before the shape: the shape is truncated to 500 characters
+    // and Cloudinary puts request_options ahead of the actual error.
     console.error(
-      `[worker] stage=${activeStage} outcome=failed type=${safeError.type} code=${safeError.code} ` +
-      `thrown=${error?.constructor?.name ?? typeof error} message=${redactForLog(error?.message)} ` +
+      `[worker] job=${activeJob?.jobId ?? ""} stage=${activeStage} outcome=failed type=${safeError.type} code=${safeError.code} ` +
+      `status=${status ?? ""} thrown=${error?.constructor?.name ?? typeof error} message=${redactForLog(message)} ` +
       `shape=${redactForLog(safeStringify(error))}`
     );
     await handleFailure(activeJob, activeStage, safeError, ports);
@@ -82,13 +85,6 @@ function safeStringify(value) {
   } catch {
     return String(value);
   }
-}
-
-function redactForLog(message) {  return String(message ?? "")
-    .replace(/https?:\/\/[^\s"']+/g, "[url]")
-    .replace(/ya29\.[A-Za-z0-9-_]+/g, "[token]")
-    .replace(/-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----/g, "[key]")
-    .slice(0, 500);
 }
 
 async function handleRenderStage(job, now, workerId, ports) {
@@ -251,7 +247,7 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
     if (error instanceof WorkerError) {
       throw error;
     }
-    throw new WorkerError("external", "buffer_create_failed", "Failed to create Buffer draft", error);
+    throw new WorkerError("external", "buffer_create_failed", `Failed to create Buffer draft: ${describeThrown(error).message}`, error);
   }
 }
 

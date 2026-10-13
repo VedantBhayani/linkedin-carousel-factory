@@ -68,7 +68,7 @@ export function failureTransition(job, stage, error) {
       failed.status = "render_retry";
     }
   } else {
-    if (isTerminalConfig || isFinalAttempt) {
+    if (isValidation || isTerminalConfig || isFinalAttempt) {
       failed.status = "draft_failed";
     } else {
       failed.status = "draft_retry";

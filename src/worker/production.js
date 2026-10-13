@@ -7,7 +7,7 @@ import { createCloudinaryAssetStore } from "../adapters/cloudinary-assets.js";
 import { createBufferDraftService } from "../adapters/buffer-drafts.js";
 import { renderCarousel } from "../render.js";
 import { createWorkerRunner } from "./main.js";
-import { WorkerError } from "./errors.js";
+import { WorkerError, registerSecretValues, redactForLog } from "./errors.js";
 
 const REQUIRED_ENV = [
   "GOOGLE_SERVICE_ACCOUNT_JSON",
@@ -44,7 +44,19 @@ export function loadProductionConfig(env = process.env) {
   };
 }
 
+export function secretValuesFor(config) {
+  const values = [config.cloudinary.apiKey, config.cloudinary.apiSecret, config.buffer.apiKey];
+  try {
+    const account = JSON.parse(config.serviceAccountJson);
+    values.push(account.private_key, account.private_key_id);
+  } catch {
+    // Malformed JSON is reported by createGoogleClients as a configuration error.
+  }
+  return values.filter((value) => typeof value === "string" && value.length > 0);
+}
+
 export function createProductionRunner(config) {
+  registerSecretValues(secretValuesFor(config));
   const { sheets, drive } = createGoogleClients({ serviceAccountJson: config.serviceAccountJson });
   const ports = {
     JobQueue: createSheetJobQueue({
@@ -86,7 +98,7 @@ async function main() {
     const result = await run();
     console.log(JSON.stringify({ outcome: result.outcome, error: result.error ?? null }));
   } catch (error) {
-    console.error(error instanceof WorkerError ? `${error.type}:${error.code} ${error.message}` : (error.stack || error.message));
+    console.error(redactForLog(error instanceof WorkerError ? `${error.type}:${error.code} ${error.message}` : (error.stack || error.message)));
     process.exitCode = 1;
   }
 }
