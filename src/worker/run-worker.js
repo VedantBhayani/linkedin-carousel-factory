@@ -1,5 +1,5 @@
 import { assertWorkerPorts } from "./ports.js";
-import { stageFor, claimJob, failureTransition, MAX_STAGE_ATTEMPTS } from "./job-state.js";
+import { stageFor, expiredLockStage, claimJob, failureTransition, MAX_STAGE_ATTEMPTS } from "./job-state.js";
 import { WorkerError, toSafeQueueError, toWorkerError, describeThrown, redactForLog } from "./errors.js";
 import { createRunKey, createManifestDraft, validateStoredManifest } from "./manifest.js";
 import { readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
@@ -19,6 +19,18 @@ async function runWorker({ ports, clock, createWorkerId }) {
   const eligibleJob = await JobQueue.findEligible(now);
   if (!eligibleJob) {
     return { outcome: "idle" };
+  }
+
+  const expiredStage = expiredLockStage(eligibleJob, now);
+  if (expiredStage) {
+    const error = new WorkerError(
+      "external",
+      "stale_lock_exhausted",
+      `The ${expiredStage} lock expired after the final attempt; the previous worker stopped without recording a result`
+    );
+    console.error(`[worker] job=${eligibleJob.jobId} stage=${expiredStage} outcome=failed type=${error.type} code=${error.code}`);
+    await handleFailure(eligibleJob, expiredStage, error, ports);
+    return { outcome: "failed", error: error.code };
   }
 
   const stage = stageFor(eligibleJob, now);

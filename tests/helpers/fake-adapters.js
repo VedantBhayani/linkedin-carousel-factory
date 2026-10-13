@@ -1,23 +1,14 @@
-import { findDuplicatePostTextRows } from "../../src/worker/job-state.js";
+import { isActionable, findDuplicatePostTextRows } from "../../src/worker/job-state.js";
 
 export function createFakeQueue(initialJobs = []) {
   const jobs = new Map(initialJobs.map((j) => [j.rowId, { ...j }]));
   const calls = { findEligible: 0, persistClaim: 0, persistState: 0 };
 
+  // Same eligibility rule as the Sheet adapter, so worker tests cannot pass on rows
+  // production would never pick up.
   function findFirstEligible(now) {
     for (const job of jobs.values()) {
-      if (job.status === "carousel_created" || job.status === "render_retry") {
-        return { ...job };
-      }
-      if (job.status === "rendering" || job.status === "drafting") {
-        const lockTime = new Date(job.lockedAt).getTime();
-        if (!isNaN(lockTime) && now.getTime() - lockTime >= 30 * 60 * 1000) {
-          return { ...job };
-        }
-      }
-      if (job.status === "render_created" || job.status === "draft_retry") {
-        return { ...job };
-      }
+      if (isActionable(job, now)) return { ...job };
     }
     return null;
   }
