@@ -22,16 +22,6 @@ const sharedInputPath = path.join(root, "input", "carousel.json");
 const distDir = path.join(root, "dist");
 const tmpDir = path.join(root, "tmp");
 
-function snapshotStats(dir) {
-  if (!fs.existsSync(dir)) return {};
-  const stats = {};
-  for (const name of fs.readdirSync(dir)) {
-    const p = path.join(dir, name);
-    if (fs.statSync(p).isFile()) stats[name] = fs.statSync(p).mtimeMs;
-  }
-  return stats;
-}
-
 test("real renderer produces verified draft_created end to end", async () => {
   const fixtureBytes = fs.readFileSync(driveFixturePath);
   const fixture = JSON.parse(fixtureBytes.toString("utf8"));
@@ -60,14 +50,15 @@ test("real renderer produces verified draft_created end to end", async () => {
   const drafts = createFakeDraftService();
 
   let renderedPdfPages = 0;
+  let renderOutDir = null;
   const renderer = createFakeRenderer(async ({ inputPath, distDir: outDir }) => {
+    renderOutDir = outDir;
     const result = await renderCarousel({ inputPath, distDir: outDir });
     const pdf = await PDFDocument.load(fs.readFileSync(result.pdf));
     renderedPdfPages = pdf.getPageCount();
     return result;
   });
 
-  const distBefore = snapshotStats(distDir);
   const sharedInputBefore = fs.statSync(sharedInputPath).mtimeMs;
 
   const result = await runWorker({
@@ -109,6 +100,11 @@ test("real renderer produces verified draft_created end to end", async () => {
     ? fs.readdirSync(tmpDir).filter((name) => name === "worker-worker-integration")
     : [];
   assert.deepEqual(leftovers, []);
-  assert.deepEqual(snapshotStats(distDir), distBefore);
+  // The worker must render into its own temporary directory, never the shared dist/.
+  // This is checked on the path the worker hands to the renderer, not by watching dist/:
+  // node --test runs test files in parallel and tests/render.test.js writes dist/ itself,
+  // which made a dist/ snapshot fail on a fresh CI runner (run 38402544297).
+  assert.equal(path.relative(path.join(tmpDir, "worker-worker-integration"), renderOutDir), "output");
+  assert.notEqual(path.resolve(renderOutDir), path.resolve(distDir));
   assert.equal(fs.statSync(sharedInputPath).mtimeMs, sharedInputBefore);
 });
