@@ -14,8 +14,14 @@ const KNOWN_STATUSES = new Set([
   "queued", "processing", "brief_created", "carousel_processing", "carousel_created", "failed", "needs_human",
   // Written by the GitHub worker
   "rendering", "render_retry", "render_created", "render_failed",
-  "drafting", "draft_retry", "draft_created", "draft_failed"
+  "drafting", "draft_retry", "draft_created", "draft_failed",
+  // Set by hand to retire old rows (present in the live Sheet)
+  "archived"
 ]);
+
+// Rows nothing will touch again. A duplicate among only these rows cannot cause a
+// wrong-row draft, so it is reported but does not fail preflight.
+const FINISHED_STATUSES = new Set(["archived", "draft_created", "render_failed", "draft_failed", "failed", "needs_human"]);
 
 const REQUIRED_COLUMNS = SHEET_COLUMNS.filter((name) => name !== "brief_file");
 
@@ -47,6 +53,9 @@ export function analyzeSheet(values, now = new Date(), sheetName = "Sheet1") {
     byText.set(text, [...(byText.get(text) ?? []), row.rowId]);
   }
   const duplicateGroups = [...byText.values()].filter((group) => group.length > 1);
+  const statusByRow = new Map(rows.map((row) => [row.rowId, row.status]));
+  const activeDuplicateGroups = duplicateGroups.filter((group) =>
+    group.some((rowId) => !FINISHED_STATUSES.has(statusByRow.get(rowId))));
 
   let next = null;
   for (const row of rows) {
@@ -60,10 +69,11 @@ export function analyzeSheet(values, now = new Date(), sheetName = "Sheet1") {
 
   const blocking = rows.some((row) => row.issues.some((issue) => !issue.startsWith("job_id has surrounding")));
   return {
-    ok: !blocking && duplicateGroups.length === 0,
+    ok: !blocking && activeDuplicateGroups.length === 0,
     missingHeaders,
     rows: rows.map(({ job, ...row }) => row),
     duplicateGroups,
+    activeDuplicateGroups,
     next
   };
 }
@@ -78,7 +88,8 @@ export function formatReport(report) {
     lines.push(`${row.rowId} ${row.jobId || "(no job_id)"} ${row.status || "(no status)"}${row.issues.length ? ` ISSUES: ${row.issues.join("; ")}` : ""}`);
   }
   for (const group of report.duplicateGroups) {
-    lines.push(`duplicate post_text: ${group.join(", ")} (the worker will stop these rows)`);
+    const active = report.activeDuplicateGroups.includes(group);
+    lines.push(`duplicate post_text: ${group.join(", ")} (${active ? "the worker will stop these rows" : "all finished; informational"})`);
   }
   lines.push(report.next ? `next: ${report.next.rowId} ${report.next.jobId} ${report.next.stage}` : "next: none (worker would be idle)");
   lines.push(`result: ${report.ok ? "ok" : "problems found"}`);
