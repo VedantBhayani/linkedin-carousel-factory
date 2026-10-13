@@ -1,4 +1,4 @@
-import { stageFor } from "../worker/job-state.js";
+import { stageFor, findDuplicatePostTextRows } from "../worker/job-state.js";
 
 export const SHEET_COLUMNS = [
   "job_id",
@@ -110,10 +110,12 @@ export function createSheetJobQueue({ sheets, spreadsheetId, sheetName }) {
       const rows = await readAll();
       if (rows.length < 2) return null;
       const header = rows[0];
-      for (let i = 1; i < rows.length; i += 1) {
-        const job = rowToJob(header, rows[i], i + 1, sheetName);
+      const jobs = rows.slice(1).map((values, i) => rowToJob(header, values, i + 2, sheetName));
+      for (const job of jobs) {
         if (!job.jobId) continue;
-        if (stageFor(job, now) !== null) return job;
+        if (stageFor(job, now) !== null) {
+          return { ...job, duplicatePostTextRowIds: findDuplicatePostTextRows(job, jobs) };
+        }
       }
       return null;
     },

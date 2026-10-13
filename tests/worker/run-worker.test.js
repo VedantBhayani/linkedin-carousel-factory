@@ -561,12 +561,12 @@ test("stored draft id is reconciled first", async () => {
   assert.equal(updated.bufferDraftUrl, "https://buffer.com/draft/stored-d1");
 });
 
-test("existing draft by run key is reused", async () => {
+test("existing draft with the job's exact post text is reused", async () => {
   const { manifest, locator } = await buildStoredManifest("test-001", driveBytesTest001);
   const assets = createFakeAssetStore();
   assets.addManifest(manifest.runKey, manifest);
   const drafts = createFakeDraftService();
-  drafts.addDraft({ id: "runkey-d1", url: "https://buffer.com/draft/runkey-d1", runKey: manifest.runKey, caption: "old", pdfUrl: "old" });
+  drafts.addDraft({ id: "runkey-d1", url: "https://buffer.com/draft/runkey-d1", runKey: manifest.runKey, caption: "exact unmodified post text", pdfUrl: "old" });
 
   const job = makeDraftOnlyJob({ renderManifest: locator });
   const queue = createFakeQueue([job]);
@@ -661,7 +661,7 @@ async function runWorkerOnce({ queue, payload, renderer, assets, drafts }) {
 
 test("render retry: attempt one failure becomes render_retry", async () => {
   const job = makeDraftOnlyJob({ status: "carousel_created", renderAttempts: 0, renderManifest: "" });
-  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", status: "carousel_created", renderAttempts: 0, renderManifest: "" });
+  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", postText: "a different post", status: "carousel_created", renderAttempts: 0, renderManifest: "" });
   const queue = createFakeQueue([job, other]);
   const payload = createFakePayloadStore();
 
@@ -794,7 +794,7 @@ test("configuration failure happens before any job is claimed", async () => {
 
 test("queue errors are sanitized and row-scoped", async () => {
   const job = makeDraftOnlyJob({ status: "carousel_created", renderAttempts: 0, renderManifest: "" });
-  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", status: "carousel_created" });
+  const other = makeDraftOnlyJob({ rowId: "Sheet1!9", jobId: "other-1", postText: "a different post", status: "carousel_created" });
   const queue = createFakeQueue([job, other]);
   const payload = createFakePayloadStore();
   const secretUrl = "https://drive.google.com/file/d/secret123/view?usp=sharing";

@@ -97,6 +97,8 @@ async function handleRenderStage(job, now, workerId, ports) {
     throw new WorkerError("validation", "invalid_job_id", "Job id must contain only letters, digits, hyphens, or underscores");
   }
 
+  assertUniquePostText(job);
+
   const downloadResult = await PayloadStore.download(job.carouselFile);
   const expectedFileName = `${jobId}-carousel-v1.json`;
   // Drive and the scheduled task have both produced whitespace-padded names and ids
@@ -206,6 +208,10 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
     );
   }
 
+  // Without a stored draft id the draft can only be found by caption, which is ambiguous
+  // when another row has the same post text.
+  if (!draftJob.bufferDraftId) assertUniquePostText(draftJob);
+
   const existingDraft = await DraftService.findDraft({
     runKey: manifest.runKey,
     storedDraftId: draftJob.bufferDraftId,
@@ -248,6 +254,17 @@ async function handleDraftStage(job, now, workerId, ports, onClaimed) {
       throw error;
     }
     throw new WorkerError("external", "buffer_create_failed", `Failed to create Buffer draft: ${describeThrown(error).message}`, error);
+  }
+}
+
+function assertUniquePostText(job) {
+  const duplicates = job.duplicatePostTextRowIds ?? [];
+  if (duplicates.length > 0) {
+    throw new WorkerError(
+      "validation",
+      "duplicate_post_text",
+      `post_text is identical to ${duplicates.join(", ")}; a human must make it unique or remove the duplicate row`
+    );
   }
 }
 

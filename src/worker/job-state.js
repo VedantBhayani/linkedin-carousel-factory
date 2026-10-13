@@ -77,3 +77,13 @@ export function failureTransition(job, stage, error) {
 
   return failed;
 }
+// Buffer drafts can only be reconciled by caption, and the caption is the Sheet post_text.
+// Two rows with the same post_text could therefore adopt each other's draft, so such rows
+// are reported and stopped for a human instead of guessed at.
+export function findDuplicatePostTextRows(job, jobs) {
+  const text = String(job?.postText ?? "").trim();
+  if (!text) return [];
+  return jobs
+    .filter((other) => other.rowId !== job.rowId && String(other.postText ?? "").trim() === text)
+    .map((other) => other.rowId);
+}

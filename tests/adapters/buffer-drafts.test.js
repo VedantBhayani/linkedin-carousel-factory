@@ -191,3 +191,42 @@ test("createDraft rejects empty captions and non-https asset urls", async () => 
   await assert.rejects(service.createDraft({ runKey: "r", caption: "c", pdfUrl: "http://x/y.pdf", coverUrl: "https://x/c.jpg" }), /pdfUrl/);
   await assert.rejects(service.createDraft({ runKey: "r", caption: "c", pdfUrl: "https://x/y.pdf", coverUrl: "" }), /coverUrl/);
 });
+
+function draftsPage(nodes, pageInfo) {
+  return jsonResponse({ data: { posts: { edges: nodes.map((node) => ({ node })), pageInfo } } });
+}
+
+const draftNode = (id, text) => ({ id, text, status: "draft", externalLink: null, channelId: "channel-1" });
+
+test("findDraft reads every page of drafts before deciding", async () => {
+  const { fetch, calls } = makeFetch([
+    jsonResponse({ data: { account: { organizations: [{ id: "org-1" }] } } }),
+    draftsPage([draftNode("p1", "other text")], { hasNextPage: true, endCursor: "cursor-1" }),
+    draftsPage([draftNode("p2", "exact caption")], { hasNextPage: false, endCursor: "cursor-2" })
+  ]);
+  const service = makeService(fetch);
+
+  const draft = await service.findDraft({ runKey: "job-1:abc", storedDraftId: "", caption: "exact caption" });
+
+  assert.equal(draft.id, "p2");
+  assert.equal(calls.length, 3);
+  assert.equal(JSON.parse(calls[1].options.body).variables.after, null);
+  assert.equal(JSON.parse(calls[2].options.body).variables.after, "cursor-1");
+  assert.ok(JSON.parse(calls[2].options.body).query.includes("pageInfo { hasNextPage endCursor }"));
+});
+
+test("findDraft refuses to pick between several drafts with the same caption", async () => {
+  const { fetch } = makeFetch([
+    jsonResponse({ data: { account: { organizations: [{ id: "org-1" }] } } }),
+    draftsPage([draftNode("d1", "exact caption")], { hasNextPage: true, endCursor: "c1" }),
+    draftsPage([draftNode("d2", "exact caption")], { hasNextPage: false, endCursor: null })
+  ]);
+  const service = makeService(fetch);
+
+  await assert.rejects(service.findDraft({ runKey: "job-1:abc", storedDraftId: "", caption: "exact caption" }), (error) => {
+    assert.ok(error instanceof WorkerError);
+    assert.equal(error.type, "data_integrity");
+    assert.equal(error.code, "multiple_matching_drafts");
+    return true;
+  });
+});
