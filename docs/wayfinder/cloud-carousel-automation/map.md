@@ -44,3 +44,18 @@ An implementation-ready architecture specification for a cloud-native carousel f
 - Calling the OpenAI API from application code.
 - Building a public multi-tenant SaaS product in the first implementation.
 - A custom dashboard, Supabase control plane, custom MCP server, and visual embeddings in V1; these return only if the lean workflow proves insufficient.
+
+## Built vs designed (as of 2026-10-13)
+
+This map records the design. The parts below differ from what the code does today:
+
+| Designed | Built |
+|---|---|
+| Five-minute scheduled worker (ticket 03) | Manual `workflow_dispatch` only, plus a read-only `preflight` mode |
+| `render_attempt_id` / `render_started_at` columns (ticket 03) | `worker_id` / `locked_at` / `updated_at` |
+| Five curated reference collections; references inspected before carousel JSON (tickets 04, 12) | One collection, `dark-editorial`, hardcoded in the prompts; no references are read |
+| Reference Registry, analysis files, style candidates (ticket 04) | Not built |
+| "Retry twice, then fail closed and notify" | Three attempts per stage; the only notification is GitHub's failed-run email |
+| Draft reconciliation by run-key metadata or a deterministic marker (worker design spec) | Stored draft id, then unique exact caption, with duplicate posts stopped (ADR 0001) |
+
+Tickets 05, 06, 09, 10 and 11 are still open.
