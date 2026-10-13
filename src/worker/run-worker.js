@@ -1,5 +1,5 @@
 import { assertWorkerPorts } from "./ports.js";
-import { stageFor, expiredLockStage, claimJob, failureTransition, MAX_STAGE_ATTEMPTS } from "./job-state.js";
+import { stageFor, expiredLockStage, claimJob, failureTransition, MAX_STAGE_ATTEMPTS, SAFE_JOB_ID } from "./job-state.js";
 import { WorkerError, toSafeQueueError, toWorkerError, describeThrown, redactForLog } from "./errors.js";
 import { createRunKey, createManifestDraft, validateStoredManifest } from "./manifest.js";
 import { readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..", "..");
-const SAFE_JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 async function runWorker({ ports, clock, createWorkerId }) {
   assertWorkerPorts(ports);

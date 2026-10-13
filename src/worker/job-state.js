@@ -1,6 +1,9 @@
 export const MAX_STAGE_ATTEMPTS = 3;
 export const STALE_LOCK_MS = 30 * 60 * 1000;
 
+// Job ids become part of Cloudinary public IDs and the run key.
+export const SAFE_JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
 const renderEligible = new Set(["carousel_created", "render_retry"]);
 const draftEligible = new Set(["render_created", "draft_retry"]);
 const terminalStatuses = new Set(["render_failed", "draft_failed", "draft_created"]);
