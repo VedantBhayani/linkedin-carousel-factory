@@ -61,4 +61,3 @@ The existing renderer keeps producing eight PNG slides, a cover JPEG, HTML, and 
 - Rendering tests run with the licensed files and verify `document.fonts.check()` for both families before output.
 - A fresh eight-slide render is visually inspected for overflow, wrapping, font substitution, and low-contrast text.
 - The full test suite must pass before the branch is pushed for review.
-

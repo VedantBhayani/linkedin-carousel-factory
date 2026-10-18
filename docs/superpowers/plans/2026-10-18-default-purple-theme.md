@@ -137,4 +137,3 @@
 - [ ] Run `git diff --check`, inspect the full branch diff, and push every implementation commit.
 - [ ] Run `gh workflow view linkedin-carousel-render.yml --ref codex/default-purple-theme --yaml` and inspect the server-parsed workflow after the branch is pushed.
 - [ ] Dispatch the workflow in `preflight` mode only. Keep normal worker dispatch paused until Task 7 is clean and the branch is merged with JSON-builder v3 installed.
-
