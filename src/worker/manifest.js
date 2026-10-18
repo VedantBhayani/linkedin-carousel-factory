@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 
+export const STYLE_FAMILY = "dark-editorial";
+export const CURRENT_STYLE_VERSION = 2;
+// Version 1 manifests belong to jobs rendered before the purple theme and must still reconcile drafts.
+export const ACCEPTED_STYLE_VERSIONS = Object.freeze([1, 2]);
+
 export function sha256Bytes(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -44,7 +49,7 @@ export async function createManifestDraft({ jobId, payloadBytes, outputs, now })
     jobId,
     payloadSha256,
     runKey,
-    style: { family: "dark-editorial", version: 1 },
+    style: { family: STYLE_FAMILY, version: CURRENT_STYLE_VERSION },
     createdAt: now.toISOString(),
     files
   };
@@ -85,8 +90,8 @@ export function validateStoredManifest(manifest) {
     throw new Error("runKey must be jobId:sha256");
   }
   
-  if (manifest.style.family !== "dark-editorial" || manifest.style.version !== 1) {
-    throw new Error("style must be dark-editorial version 1");
+  if (manifest.style.family !== STYLE_FAMILY || !ACCEPTED_STYLE_VERSIONS.includes(manifest.style.version)) {
+    throw new Error(`style must be ${STYLE_FAMILY} version ${ACCEPTED_STYLE_VERSIONS.join(" or ")}`);
   }
   
   if (!manifest.files || typeof manifest.files !== "object") {

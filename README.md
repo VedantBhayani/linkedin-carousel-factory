@@ -9,7 +9,7 @@ Google Sheet row (status: queued)
   │  scheduled task: prompts/brief-builder.v2.md
   ▼
 brief JSON in Drive               (status: brief_created)
-  │  scheduled task: prompts/carousel-json-builder.v2.md
+  │  scheduled task: prompts/carousel-json-builder.v3.md
   ▼
 carousel JSON in Drive            (status: carousel_created)
   │  GitHub Actions "Render LinkedIn Carousel", dispatched manually
@@ -67,6 +67,13 @@ Repository secrets:
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Cloudinary API settings |
 | `BUFFER_API_KEY` | `publish.buffer.com/settings/api` |
 | `BUFFER_CHANNEL_ID` | GraphQL `channels` query |
+| `CAROUSEL_FONTS_B64_01` … `CAROUSEL_FONTS_B64_07` | the licensed fonts (see below) |
+
+### Licensed fonts
+
+Headings use Helvetica Bold and accent lines use Griffiths Regular. Both are licensed and never committed. A render needs `CAROUSEL_FONT_DIR` pointing at a directory that holds exactly `Helvetica-Bold.ttf` and `Griffiths.otf`. Their SHA-256 digests must match the ones in `src/fonts.js`. Anything else stops the run as `configuration:invalid_production_font` before a row is claimed. If Chromium cannot load a face, the run stops as `configuration:production_font_unavailable` before any file is written. The renderer never falls back to another font.
+
+In Actions, the two files are zipped, Base64-encoded and split into seven secrets of at most 40,000 characters. The **Load licensed fonts** step rebuilds them under `$RUNNER_TEMP` and checks them with `scripts/verify-production-fonts.mjs`. The last step deletes them, even when an earlier step fails. Preflight does not need the fonts.
 
 Actions → **Render LinkedIn Carousel** → Run workflow:
 
@@ -82,18 +89,19 @@ Buffer must be able to fetch the PDF from Cloudinary. Buffer once rejected a dra
 ```bash
 npm ci
 npx playwright install chromium
+export CAROUSEL_FONT_DIR=/path/to/licensed/fonts
 npm test
 npm run render
 ```
 
-`npm run render` renders `input/carousel.json` to `dist/` (ignored by git). `examples/launch-video-001/` holds one committed sample render.
+`npm test` and `npm run render` need `CAROUSEL_FONT_DIR`. `npm run render` renders `input/carousel.json` to `dist/` (ignored by git). `examples/launch-video-001/` holds one committed sample render.
 
 `npm run worker` and `npm run preflight` need the same environment variables as the workflow. With none of them set, `npm run worker` exits without doing anything.
 
 ## Carousel JSON
 
 ```json
-{ "jobId": "live-001", "title": "…", "style": { "family": "dark-editorial", "accent": "electric-blue", "density": "low" }, "slides": [ … 8 slides … ] }
+{ "jobId": "live-001", "title": "…", "style": { "family": "dark-editorial", "accent": "editorial-purple", "density": "low" }, "slides": [ … 8 slides … ] }
 ```
 
 | Layout | Required | Optional |
@@ -110,7 +118,7 @@ Limits:
 - `eyebrow`: at most 6 words / 40 characters.
 - Card labels: at most 3 words / 24 characters.
 
-Unknown fields are rejected. Labels that are left out fall back to the original launch-video wording, so the v2 prompt always sets them. The renderer also rejects text that is clipped by or overflows a slide.
+Unknown fields are rejected. Labels that are left out fall back to the original launch-video wording, so the JSON-builder prompt always sets them. The renderer also rejects text that is clipped by or overflows a slide.
 
 ## Layout of the code
 

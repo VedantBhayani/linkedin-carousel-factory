@@ -13,6 +13,16 @@ test("validates the approved eight-slide carousel", () => {
   assert.equal(validateCarousel(structuredClone(fixture)).slides.length, 8);
 });
 
+test("accepts editorial purple and rejects the retired electric blue accent", () => {
+  const approved = structuredClone(fixture);
+  approved.style.accent = "editorial-purple";
+  assert.equal(validateCarousel(approved).style.accent, "editorial-purple");
+
+  const retired = structuredClone(fixture);
+  retired.style.accent = "electric-blue";
+  assert.throws(() => validateCarousel(retired), /carousel\.style\.accent must be \"editorial-purple\"/);
+});
+
 test("rejects a carousel that does not contain exactly eight slides", () => {
   const invalid = structuredClone(fixture);
   invalid.slides.pop();

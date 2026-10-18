@@ -48,6 +48,42 @@ jobs:
         if: inputs.mode != 'preflight'
         run: npx playwright install --with-deps chromium
 
+      # The licensed fonts live only in seven Base64 chunk secrets of one ZIP. They are
+      # rebuilt under RUNNER_TEMP, never printed, and removed by the last step.
+      - name: Load licensed fonts
+        if: inputs.mode != 'preflight'
+        env:
+          CAROUSEL_FONTS_B64_01: ${{ secrets.CAROUSEL_FONTS_B64_01 }}
+          CAROUSEL_FONTS_B64_02: ${{ secrets.CAROUSEL_FONTS_B64_02 }}
+          CAROUSEL_FONTS_B64_03: ${{ secrets.CAROUSEL_FONTS_B64_03 }}
+          CAROUSEL_FONTS_B64_04: ${{ secrets.CAROUSEL_FONTS_B64_04 }}
+          CAROUSEL_FONTS_B64_05: ${{ secrets.CAROUSEL_FONTS_B64_05 }}
+          CAROUSEL_FONTS_B64_06: ${{ secrets.CAROUSEL_FONTS_B64_06 }}
+          CAROUSEL_FONTS_B64_07: ${{ secrets.CAROUSEL_FONTS_B64_07 }}
+        run: |
+          set -euo pipefail
+          archive="$(mktemp "$RUNNER_TEMP/carousel-fonts.XXXXXXXX")"
+          font_dir="$(mktemp -d "$RUNNER_TEMP/carousel-fonts-dir.XXXXXXXX")"
+          {
+            printf 'CAROUSEL_FONT_CLEANUP_ARCHIVE=%s\n' "$archive"
+            printf 'CAROUSEL_FONT_CLEANUP_DIR=%s\n' "$font_dir"
+          } >> "$GITHUB_ENV"
+          for part in 01 02 03 04 05 06 07; do
+            name="CAROUSEL_FONTS_B64_$part"
+            if [ -z "${!name:-}" ]; then
+              printf '::error::Secret %s is missing or empty\n' "$name"
+              exit 1
+            fi
+          done
+          for part in 01 02 03 04 05 06 07; do
+            name="CAROUSEL_FONTS_B64_$part"
+            printf '%s' "${!name}"
+          done | base64 --decode > "$archive"
+          unzip -q "$archive" -d "$font_dir"
+          rm -f -- "$archive"
+          node scripts/verify-production-fonts.mjs "$font_dir"
+          printf 'CAROUSEL_FONT_DIR=%s\n' "$font_dir" >> "$GITHUB_ENV"
+
       - name: Test and render
         if: inputs.mode != 'preflight'
         run: npm test
@@ -64,3 +100,22 @@ jobs:
           BUFFER_API_KEY: ${{ secrets.BUFFER_API_KEY }}
           BUFFER_CHANNEL_ID: ${{ secrets.BUFFER_CHANNEL_ID }}
         run: npm run worker
+
+      - name: Remove licensed fonts
+        if: always() && inputs.mode != 'preflight'
+        run: |
+          set -euo pipefail
+          temp_root="$(realpath "$RUNNER_TEMP")"
+          for target in "${CAROUSEL_FONT_CLEANUP_ARCHIVE:-}" "${CAROUSEL_FONT_CLEANUP_DIR:-}"; do
+            if [ -z "$target" ] || [ ! -e "$target" ]; then
+              continue
+            fi
+            resolved="$(realpath "$target")"
+            case "$resolved" in
+              "$temp_root"/?*) rm -rf -- "$resolved" ;;
+              *)
+                echo "::error::Refusing to remove a font path outside RUNNER_TEMP"
+                exit 1
+                ;;
+            esac
+          done

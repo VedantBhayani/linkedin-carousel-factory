@@ -4,9 +4,21 @@
   --muted: #9296a3;
   --faint: #5f6470;
   --line: #252936;
-  --blue: #5274ff;
-  --blue-soft: rgba(82, 116, 255, 0.16);
+  /* #420D4A is too dark to read on --paper (1.32:1): surfaces, glows and quiet borders only. */
+  --accent-deep: #420d4a;
+  --accent-deep-glow: rgba(66, 13, 74, 0.62);
+  --accent-deep-wash: rgba(66, 13, 74, 0.5);
+  /* Readable purple (about 4.8:1 on --paper) for text and high-emphasis rules. */
+  --accent-text: #b84fcc;
+  --accent-text-light: #dca6e8;
+  --accent-soft: rgba(184, 79, 204, 0.16);
+  --accent-ring: rgba(184, 79, 204, 0.38);
+  --accent-halo: rgba(184, 79, 204, 0.55);
+  --accent-border: rgba(184, 79, 204, 0.7);
+  --accent-fade: rgba(184, 79, 204, 0);
   --paper: #07080c;
+  --display: "CarouselHelveticaDisplay", sans-serif;
+  --editorial: "CarouselGriffithsAccent", serif;
 }
 
 * { box-sizing: border-box; }
@@ -34,7 +46,7 @@ html, body {
   break-after: page;
   page-break-after: always;
   background:
-    radial-gradient(circle at 87% 9%, rgba(75, 104, 255, 0.20), transparent 29%),
+    radial-gradient(circle at 87% 9%, var(--accent-deep-glow), transparent 31%),
     linear-gradient(150deg, rgba(255, 255, 255, 0.018), transparent 52%),
     var(--paper);
 }
@@ -51,7 +63,7 @@ html, body {
 
 .eyebrow {
   margin: 0;
-  color: var(--blue);
+  color: var(--accent-text);
   font-size: 20px;
   font-weight: 600;
   line-height: 1;
@@ -59,13 +71,21 @@ html, body {
   text-transform: uppercase;
 }
 
+.title,
+.hero h1,
+.statement-content h1,
+.comparison-card h2,
+.closing-content h1 {
+  font-family: var(--display);
+  font-weight: 700;
+}
+
 .title {
   width: 870px;
   margin: 42px 0 56px;
   font-size: 61px;
-  font-weight: 600;
   line-height: 1.04;
-  letter-spacing: -0.052em;
+  letter-spacing: -0.028em;
 }
 
 .page-number {
@@ -91,9 +111,9 @@ html, body {
   height: 410px;
   right: -150px;
   top: -135px;
-  border: 1px solid rgba(82, 116, 255, 0.4);
+  border: 1px solid var(--accent-ring);
   border-radius: 50%;
-  box-shadow: 0 0 130px rgba(82, 116, 255, 0.12);
+  box-shadow: 0 0 130px var(--accent-deep-glow);
 }
 
 .hero-content { margin: 0; }
@@ -102,24 +122,23 @@ html, body {
   width: 890px;
   margin: 0;
   font-size: 91px;
-  font-weight: 600;
-  line-height: 0.98;
-  letter-spacing: -0.065em;
+  line-height: 1;
+  letter-spacing: -0.035em;
 }
 
 .accent {
-  color: var(--blue);
-  font-family: "Lora", serif;
-  font-style: italic;
+  color: var(--accent-text);
+  font-family: var(--editorial);
+  font-style: normal;
   font-weight: 400;
 }
 
 .accent-line {
-  width: 780px;
-  margin: 42px 0 0;
-  font-size: 54px;
+  width: 840px;
+  margin: 40px 0 0;
+  font-size: 64px;
   line-height: 1.12;
-  letter-spacing: -0.035em;
+  letter-spacing: 0;
 }
 
 .list { display: flex; flex-direction: column; gap: 16px; }
@@ -139,10 +158,9 @@ html, body {
 .list-number {
   width: 77px;
   flex: 0 0 77px;
-  color: var(--blue);
-  font-family: "Lora", serif;
+  color: var(--accent-text);
   font-size: 25px;
-  font-style: italic;
+  font-weight: 600;
 }
 
 .list-text {
@@ -168,17 +186,16 @@ html, body {
   height: 5px;
   margin-bottom: 52px;
   border-radius: 4px;
-  background: var(--blue);
-  box-shadow: 0 0 36px rgba(82, 116, 255, 0.55);
+  background: var(--accent-text);
+  box-shadow: 0 0 36px var(--accent-halo);
 }
 
 .statement-content h1 {
   width: 895px;
   margin: 0;
   font-size: 85px;
-  font-weight: 600;
-  line-height: 0.99;
-  letter-spacing: -0.062em;
+  line-height: 1;
+  letter-spacing: -0.034em;
 }
 
 .statement-content p {
@@ -210,8 +227,8 @@ html, body {
 }
 
 .comparison-card.highlight {
-  border-color: rgba(82, 116, 255, 0.75);
-  background: linear-gradient(155deg, rgba(82, 116, 255, 0.20), rgba(82, 116, 255, 0.025));
+  border-color: var(--accent-border);
+  background: linear-gradient(155deg, var(--accent-deep-wash), var(--accent-soft) 70%, rgba(66, 13, 74, 0.04));
 }
 
 .comparison-label {
@@ -222,13 +239,13 @@ html, body {
   text-transform: uppercase;
 }
 
-.comparison-card.highlight .comparison-label { color: #8ba0ff; }
+.comparison-card.highlight .comparison-label { color: var(--accent-text-light); }
 
 .comparison-card h2 {
   margin: 0 0 26px;
   font-size: 46px;
-  line-height: 1;
-  letter-spacing: -0.045em;
+  line-height: 1.02;
+  letter-spacing: -0.024em;
 }
 
 .comparison-card p {
@@ -245,16 +262,15 @@ html, body {
   width: 890px;
   margin: 44px 0 0;
   font-size: 88px;
-  font-weight: 600;
-  line-height: 0.98;
-  letter-spacing: -0.063em;
+  line-height: 1;
+  letter-spacing: -0.035em;
 }
 
 .closing-rule {
   width: 100%;
   height: 1px;
   margin: 56px 0 44px;
-  background: linear-gradient(90deg, var(--blue), rgba(82, 116, 255, 0));
+  background: linear-gradient(90deg, var(--accent-text), var(--accent-fade));
 }
 
 .closing-content > p {

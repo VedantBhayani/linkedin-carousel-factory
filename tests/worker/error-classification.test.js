@@ -16,7 +16,7 @@ import { failureTransition } from "../../src/worker/job-state.js";
 import { renderCarousel } from "../../src/render.js";
 import { createFakeQueue, createFakePayloadStore, createFakeRenderer, createFakeAssetStore, createFakeDraftService, createTestClock } from "../helpers/fake-adapters.js";
 
-const style = { family: "dark-editorial", accent: "electric-blue", density: "low" };
+const style = { family: "dark-editorial", accent: "editorial-purple", density: "low" };
 
 function job(overrides = {}) {
   return {

@@ -79,7 +79,7 @@ export function validateCarousel(carousel) {
   assertObject(carousel.style, "carousel.style");
   const expectedStyle = {
     family: "dark-editorial",
-    accent: "electric-blue",
+    accent: "editorial-purple",
     density: "low"
   };
   for (const [key, expected] of Object.entries(expectedStyle)) {
