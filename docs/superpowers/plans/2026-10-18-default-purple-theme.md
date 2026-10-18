@@ -58,7 +58,7 @@
 - [ ] Add loader tests for exact filenames, aliases, weights/styles, MIME formats (`font/ttf`, `font/otf`), sfnt signatures, and approved SHA-256 hashes.
 - [ ] Add negative tests for a missing directory, missing file, extra file, corrupt file, swapped files, and a correctly named file with the wrong hash.
 - [ ] Add production-composition tests proving invalid fonts fail as `configuration:invalid_production_font` before a runner is returned or a queue row can be claimed.
-- [ ] Add render tests proving the renderer uses only injected private-font CSS, awaits `document.fonts.ready`, checks `700 1em CarouselHelveticaDisplay` and `400 1em CarouselGriffithsAccent`, and creates no output files when either check fails. This prevents silent system-font fallback.
+- [ ] Add render tests proving the renderer uses only injected private-font CSS, awaits `document.fonts.ready`, checks `700 16px "CarouselHelveticaDisplay"` and `400 16px "CarouselGriffithsAccent"`, and creates no output files when either check fails. This prevents silent system-font fallback.
 - [ ] Run `$env:CAROUSEL_FONT_DIR='E:\LInkedin carousell factory fonts\production'; node --test tests/fonts.test.js tests/worker/production.test.js tests/render.test.js` and confirm the expected red failures.
 - [ ] Implement `loadEmbeddedFontCss({ fontDir })` with aliases `CarouselHelveticaDisplay` (700 normal) and `CarouselGriffithsAccent` (400 normal). Retain embedded Inter for body/UI copy.
 - [ ] Validate and prepare font CSS during production composition, before constructing the worker runner, then inject it through the renderer adapter into `renderCarousel({ inputPath, distDir, fontCss })`.
@@ -112,7 +112,6 @@
 - [ ] Add a cleanup step guarded by `if: always() && inputs.mode != 'preflight'`. It may remove only the persisted archive/extraction paths after verifying both resolve beneath `$RUNNER_TEMP`, and must still run after setup or worker failure.
 - [ ] Keep dispatch inputs, scheduling, concurrency, Google/Cloudinary/Buffer credentials, tests, and worker order unchanged.
 - [ ] Run `node --test tests/verify-production-fonts.test.js`; expect zero failures.
-- [ ] After pushing, run `gh workflow view linkedin-carousel-render.yml --ref codex/default-purple-theme --yaml` and inspect the server-parsed workflow.
 - [ ] Commit as `ci: provide licensed carousel fonts`.
 
 ### Task 7: Audit and migrate queued blue payloads
@@ -122,7 +121,7 @@
 - [ ] Keep worker dispatch paused while auditing.
 - [ ] Inventory only rows in `carousel_created`, `render_retry`, or safely reclaimable stale `rendering` whose canonical carousel JSON still contains `electric-blue`.
 - [ ] Do not rewrite `render_created`, `draft_retry`, or stale `drafting` rows; valid v1 stored render manifests remain intentionally supported.
-- [ ] For each affected pre-render row, archive the old canonical carousel file under a noncanonical name, clear/reset only the fields required by the documented queue transition, and return the row to `brief_created`.
+- [ ] For each affected pre-render row, archive the old canonical carousel file under a noncanonical name; clear `carousel_file`, `render_manifest`, `worker_id`, `locked_at`, and `error`; reset `render_attempts`; then set status to `brief_created`.
 - [ ] Install/activate the v3 JSON-builder prompt, regenerate the canonical carousel JSON, and verify `style.accent` is `editorial-purple` before allowing the worker to run.
 - [ ] If the inventory is empty, record the evidence and make no Sheet or Drive writes.
 
@@ -136,5 +135,6 @@
 - [ ] Run `$env:CAROUSEL_FONT_DIR='E:\LInkedin carousell factory fonts\production'; npm test`; require zero failures.
 - [ ] Render into a unique temporary output directory and inspect all eight PNGs for font identity, contrast, wrapping, balance, and clipping.
 - [ ] Run `git diff --check`, inspect the full branch diff, and push every implementation commit.
+- [ ] Run `gh workflow view linkedin-carousel-render.yml --ref codex/default-purple-theme --yaml` and inspect the server-parsed workflow after the branch is pushed.
 - [ ] Dispatch the workflow in `preflight` mode only. Keep normal worker dispatch paused until Task 7 is clean and the branch is merged with JSON-builder v3 installed.
 
