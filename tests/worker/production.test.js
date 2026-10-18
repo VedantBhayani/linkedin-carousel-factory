@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { loadProductionConfig, createProductionRunner, resolveStartupMode, secretValuesFor, summarizeRun } from "../../src/worker/production.js";
 import { WorkerError, toSafeQueueError, clearSecretValues } from "../../src/worker/errors.js";
@@ -10,7 +12,8 @@ const FULL_ENV = {
   CLOUDINARY_API_KEY: "key",
   CLOUDINARY_API_SECRET: "secret",
   BUFFER_API_KEY: "buffer-key",
-  BUFFER_CHANNEL_ID: "channel-1"
+  BUFFER_CHANNEL_ID: "channel-1",
+  CAROUSEL_FONT_DIR: process.env.CAROUSEL_FONT_DIR
 };
 
 test("loadProductionConfig rejects empty env as configuration errors", () => {
@@ -49,6 +52,17 @@ test("loadProductionConfig honors SHEET_NAME overrides", () => {
 test("createProductionRunner composes all five adapters without network calls", () => {
   const run = createProductionRunner(loadProductionConfig({ ...FULL_ENV }));
   assert.equal(typeof run, "function");
+});
+
+test("createProductionRunner rejects invalid fonts before any adapter or runner exists", () => {
+  for (const fontDir of [undefined, path.join(os.tmpdir(), "carousel-no-such-font-dir")]) {
+    assert.throws(() => createProductionRunner(loadProductionConfig({ ...FULL_ENV, CAROUSEL_FONT_DIR: fontDir })), (error) => {
+      assert.ok(error instanceof WorkerError);
+      assert.equal(error.type, "configuration");
+      assert.equal(error.code, "invalid_production_font");
+      return true;
+    });
+  }
 });
 
 test("resolveStartupMode skips when no production variables are set", () => {

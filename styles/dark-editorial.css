@@ -7,6 +7,8 @@
   --blue: #5274ff;
   --blue-soft: rgba(82, 116, 255, 0.16);
   --paper: #07080c;
+  --display: "CarouselHelveticaDisplay", sans-serif;
+  --editorial: "CarouselGriffithsAccent", serif;
 }
 
 * { box-sizing: border-box; }
@@ -59,11 +61,19 @@ html, body {
   text-transform: uppercase;
 }
 
+.title,
+.hero h1,
+.statement-content h1,
+.comparison-card h2,
+.closing-content h1 {
+  font-family: var(--display);
+  font-weight: 700;
+}
+
 .title {
   width: 870px;
   margin: 42px 0 56px;
   font-size: 61px;
-  font-weight: 600;
   line-height: 1.04;
   letter-spacing: -0.052em;
 }
@@ -102,15 +112,14 @@ html, body {
   width: 890px;
   margin: 0;
   font-size: 91px;
-  font-weight: 600;
   line-height: 0.98;
   letter-spacing: -0.065em;
 }
 
 .accent {
   color: var(--blue);
-  font-family: "Lora", serif;
-  font-style: italic;
+  font-family: var(--editorial);
+  font-style: normal;
   font-weight: 400;
 }
 
@@ -140,9 +149,8 @@ html, body {
   width: 77px;
   flex: 0 0 77px;
   color: var(--blue);
-  font-family: "Lora", serif;
   font-size: 25px;
-  font-style: italic;
+  font-weight: 600;
 }
 
 .list-text {
@@ -176,7 +184,6 @@ html, body {
   width: 895px;
   margin: 0;
   font-size: 85px;
-  font-weight: 600;
   line-height: 0.99;
   letter-spacing: -0.062em;
 }
@@ -245,7 +252,6 @@ html, body {
   width: 890px;
   margin: 44px 0 0;
   font-size: 88px;
-  font-weight: 600;
   line-height: 0.98;
   letter-spacing: -0.063em;
 }

@@ -6,6 +6,7 @@ import { createDrivePayloadStore } from "../adapters/drive-payload.js";
 import { createCloudinaryAssetStore } from "../adapters/cloudinary-assets.js";
 import { createBufferDraftService } from "../adapters/buffer-drafts.js";
 import { renderCarousel } from "../render.js";
+import { loadEmbeddedFontCss } from "../fonts.js";
 import { createWorkerRunner } from "./main.js";
 import { WorkerError, registerSecretValues, redactForLog } from "./errors.js";
 
@@ -40,7 +41,8 @@ export function loadProductionConfig(env = process.env) {
     buffer: {
       apiKey: env.BUFFER_API_KEY,
       channelId: env.BUFFER_CHANNEL_ID
-    }
+    },
+    fontDir: env.CAROUSEL_FONT_DIR
   };
 }
 
@@ -56,6 +58,8 @@ export function secretValuesFor(config) {
 }
 
 export function createProductionRunner(config) {
+  // Validated before any adapter exists, so a bad font directory can never claim a row.
+  const fontCss = loadEmbeddedFontCss({ fontDir: config.fontDir });
   registerSecretValues(secretValuesFor(config));
   const { sheets, drive } = createGoogleClients({ serviceAccountJson: config.serviceAccountJson });
   const ports = {
@@ -65,7 +69,7 @@ export function createProductionRunner(config) {
       sheetName: config.sheetName
     }),
     PayloadStore: createDrivePayloadStore({ drive }),
-    CarouselRenderer: { render: (options) => renderCarousel(options) },
+    CarouselRenderer: { render: (options) => renderCarousel({ ...options, fontCss }) },
     AssetStore: createCloudinaryAssetStore({
       cloudName: config.cloudinary.cloudName,
       apiKey: config.cloudinary.apiKey,

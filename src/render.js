@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { buildDocument } from "./document.js";
-import { loadEmbeddedFontCss } from "./fonts.js";
+import { loadEmbeddedFontCss, PRODUCTION_FONT_DESCRIPTORS } from "./fonts.js";
 import { WorkerError } from "./worker/errors.js";
 
 async function findClipping(page) {
@@ -52,7 +52,29 @@ async function findClipping(page) {
   });
 }
 
-export async function renderCarousel({ inputPath, distDir }) {
+// fonts.ready only settles faces the page already uses, so load each licensed face
+// explicitly; a face Chromium rejects must stop the render rather than fall back.
+async function assertProductionFontsLoaded(page) {
+  const unavailable = await page.evaluate(async (descriptors) => {
+    await document.fonts.ready;
+    const results = await Promise.all(descriptors.map(async (descriptor) => {
+      try {
+        const faces = await document.fonts.load(descriptor);
+        return faces.length > 0 && document.fonts.check(descriptor) ? null : descriptor;
+      } catch {
+        return descriptor;
+      }
+    }));
+    return results.filter(Boolean);
+  }, PRODUCTION_FONT_DESCRIPTORS);
+  if (unavailable.length) {
+    throw new WorkerError("configuration", "production_font_unavailable", `Chromium could not load ${unavailable.join(", ")}`);
+  }
+}
+
+// Production passes fontCss prepared (and validated) at startup; the CLI and tests
+// fall back to the licensed files in CAROUSEL_FONT_DIR.
+export async function renderCarousel({ inputPath, distDir, fontCss }) {
   function readJson(filePath) {
     try {
       return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -64,16 +86,13 @@ export async function renderCarousel({ inputPath, distDir }) {
   const carousel = readJson(inputPath);
   const cssPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "styles", "dark-editorial.css");
   const css = fs.readFileSync(cssPath, "utf8");
+  const resolvedFontCss = fontCss ?? loadEmbeddedFontCss({ fontDir: process.env.CAROUSEL_FONT_DIR });
   let html;
   try {
-    html = buildDocument(carousel, css, loadEmbeddedFontCss());
+    html = buildDocument(carousel, css, resolvedFontCss);
   } catch (error) {
     throw new WorkerError("validation", "invalid_carousel", error.message, error);
   }
-
-  fs.rmSync(distDir, { recursive: true, force: true });
-  fs.mkdirSync(distDir, { recursive: true });
-  fs.writeFileSync(path.join(distDir, "carousel.html"), html, "utf8");
 
   const browser = await chromium.launch({ headless: true });
   try {
@@ -82,7 +101,7 @@ export async function renderCarousel({ inputPath, distDir }) {
       deviceScaleFactor: 1
     });
     await page.setContent(html, { waitUntil: "load" });
-    await page.evaluate(() => document.fonts.ready);
+    await assertProductionFontsLoaded(page);
 
     const slides = page.locator(".slide");
     const slideCount = await slides.count();
@@ -95,6 +114,11 @@ export async function renderCarousel({ inputPath, distDir }) {
         `slide ${issue.slide} (${issue.tag}${issue.className ? `.${String(issue.className).split(/\s+/)[0]}` : ""})`))];
       throw new WorkerError("validation", "content_overflow", `Content is clipped or overflows on ${where.join(", ")}`);
     }
+
+    // Nothing is written until fonts and layout have both passed.
+    fs.rmSync(distDir, { recursive: true, force: true });
+    fs.mkdirSync(distDir, { recursive: true });
+    fs.writeFileSync(path.join(distDir, "carousel.html"), html, "utf8");
 
     for (let index = 0; index < slideCount; index += 1) {
       await slides.nth(index).screenshot({

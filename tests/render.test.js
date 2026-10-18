@@ -102,6 +102,18 @@ test("renders eight correctly sized slides, cover, HTML, and PDF", async () => {
       })
       .filter(({ delta }) => Math.abs(delta) > 60));
     assert.deepEqual(alignmentIssues, [], `center-aligned slides are visually unbalanced: ${JSON.stringify(alignmentIssues)}`);
+
+    const roles = await page.evaluate(() => Object.fromEntries([".hero h1", ".title", ".statement-content h1", ".comparison-card h2", ".closing-content h1", ".accent", ".list-number", ".list-text"]
+      .map((selector) => {
+        const style = getComputedStyle(document.querySelector(selector));
+        return [selector, { family: style.fontFamily.split(",")[0].replaceAll('"', "").trim(), weight: style.fontWeight, style: style.fontStyle }];
+      })));
+    for (const selector of [".hero h1", ".title", ".statement-content h1", ".comparison-card h2", ".closing-content h1"]) {
+      assert.deepEqual(roles[selector], { family: "CarouselHelveticaDisplay", weight: "700", style: "normal" }, selector);
+    }
+    assert.deepEqual(roles[".accent"], { family: "CarouselGriffithsAccent", weight: "400", style: "normal" });
+    assert.equal(roles[".list-number"].family, "Inter");
+    assert.equal(roles[".list-text"].family, "Inter");
   } finally {
     await browser.close();
   }
@@ -126,3 +138,24 @@ test("overflowing copy fails as a typed validation error that names the slide", 
     return true;
   });
 });
+
+for (const [name, fontCss] of [
+  ["missing", ""],
+  ["corrupt", ["CarouselHelveticaDisplay", "CarouselGriffithsAccent"].map((family) =>
+    `@font-face { font-family: "${family}"; src: url("data:font/ttf;base64,AAAAAAAA") format("truetype"); }`).join("\n")]
+]) {
+  test(`${name} production fonts stop the render before any output is written`, async () => {
+    const { renderCarousel } = await import("../src/render.js");
+    const { WorkerError } = await import("../src/worker/errors.js");
+    const distDir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "carousel-fonts-")), "output");
+    await assert.rejects(renderCarousel({ inputPath: fixturePath, distDir, fontCss }), (error) => {
+      assert.ok(error instanceof WorkerError);
+      assert.equal(error.type, "configuration");
+      assert.equal(error.code, "production_font_unavailable");
+      assert.match(error.message, /CarouselHelveticaDisplay/);
+      assert.match(error.message, /CarouselGriffithsAccent/);
+      return true;
+    });
+    assert.equal(fs.existsSync(distDir), false);
+  });
+}
