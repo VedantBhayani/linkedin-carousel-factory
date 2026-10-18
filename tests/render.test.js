@@ -114,6 +114,9 @@ test("renders eight correctly sized slides, cover, HTML, and PDF", async () => {
     assert.deepEqual(roles[".accent"], { family: "CarouselGriffithsAccent", weight: "400", style: "normal" });
     assert.equal(roles[".list-number"].family, "Inter");
     assert.equal(roles[".list-text"].family, "Inter");
+
+    const accentColor = await page.evaluate(() => getComputedStyle(document.querySelector(".hero .accent")).color);
+    assert.equal(accentColor, "rgb(184, 79, 204)");
   } finally {
     await browser.close();
   }
