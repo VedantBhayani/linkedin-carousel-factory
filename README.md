@@ -9,7 +9,7 @@ Google Sheet row (status: queued)
   │  scheduled task: prompts/brief-builder.v2.md
   ▼
 brief JSON in Drive               (status: brief_created)
-  │  scheduled task: prompts/carousel-json-builder.v2.md
+  │  scheduled task: prompts/carousel-json-builder.v3.md
   ▼
 carousel JSON in Drive            (status: carousel_created)
   │  GitHub Actions "Render LinkedIn Carousel", dispatched manually
@@ -93,7 +93,7 @@ npm run render
 ## Carousel JSON
 
 ```json
-{ "jobId": "live-001", "title": "…", "style": { "family": "dark-editorial", "accent": "electric-blue", "density": "low" }, "slides": [ … 8 slides … ] }
+{ "jobId": "live-001", "title": "…", "style": { "family": "dark-editorial", "accent": "editorial-purple", "density": "low" }, "slides": [ … 8 slides … ] }
 ```
 
 | Layout | Required | Optional |
@@ -110,7 +110,7 @@ Limits:
 - `eyebrow`: at most 6 words / 40 characters.
 - Card labels: at most 3 words / 24 characters.
 
-Unknown fields are rejected. Labels that are left out fall back to the original launch-video wording, so the v2 prompt always sets them. The renderer also rejects text that is clipped by or overflows a slide.
+Unknown fields are rejected. Labels that are left out fall back to the original launch-video wording, so the JSON-builder prompt always sets them. The renderer also rejects text that is clipped by or overflows a slide.
 
 ## Layout of the code
 
