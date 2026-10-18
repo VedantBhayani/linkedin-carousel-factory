@@ -34,9 +34,9 @@ The supplied swatch's dominant pixel color is `#420D4A`. Its contrast against th
 
 ### Rollout for existing Queue Records
 
-The workflow is manual-only, so deployment begins with worker dispatch paused. Before merging, inventory nonterminal rows whose existing Drive payload uses `electric-blue`.
+The workflow is manual-only, so deployment begins with worker dispatch paused. Before merging, inventory rows that still require rendering (`carousel_created`, `render_retry`, or a recoverable stale `rendering` lock) whose existing Drive payload uses `electric-blue`.
 
-For each affected row: retain the old file for audit under a noncanonical archival name, clear `carousel_file`, `render_manifest`, worker lock/error fields, and render attempts, reset the row to `brief_created`, then run the installed v3 producer prompt to create the one canonical `{JOB_ID}-carousel-v1.json`. Confirm the new file says `editorial-purple` before dispatching the worker. Finished rows and stored v1 manifests are not rewritten. Resume manual worker dispatch only after the inventory is clean.
+For each affected row: retain the old file for audit under a noncanonical archival name, clear `carousel_file`, `render_manifest`, worker lock/error fields, and render attempts, reset the row to `brief_created`, then run the installed v3 producer prompt to create the one canonical `{JOB_ID}-carousel-v1.json`. Confirm the new file says `editorial-purple` before dispatching the worker. Rows already in the draft stage (`render_created`, `draft_retry`, or a recoverable stale `drafting` lock) with a valid stored Style Package v1 manifest are explicitly excluded and continue through draft reconciliation without reading or regenerating the payload. Finished rows are untouched. Recovering a terminal `render_failed` row is a separate human decision, not part of this rollout. Resume manual worker dispatch only after the render-stage inventory is clean.
 
 ## Licensed font handling
 
