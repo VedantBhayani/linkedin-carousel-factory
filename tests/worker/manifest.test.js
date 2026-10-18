@@ -48,7 +48,7 @@ test("createManifestDraft creates valid structure with 8 slides", async () => {
   assert.match(draft.payloadSha256, /^[a-f0-9]{64}$/);
   assert.match(draft.runKey, /^launch-video-001:[a-f0-9]{64}$/);
   assert.equal(draft.style.family, "dark-editorial");
-  assert.equal(draft.style.version, 1);
+  assert.equal(draft.style.version, 2);
   assert.equal(draft.createdAt, now.toISOString());
   assert.equal(draft.files.slides.length, 8);
   
@@ -175,4 +175,30 @@ test("validateStoredManifest rejects empty files", () => {
     }
   };
   assert.throws(() => validateStoredManifest(manifest), /positive number/);
+});
+
+function storedManifest(style) {
+  return {
+    schemaVersion: 1,
+    jobId: "job-1",
+    payloadSha256: "a".repeat(64),
+    runKey: "job-1:" + "a".repeat(64),
+    style,
+    createdAt: "2026-10-07T12:00:00.000Z",
+    files: {
+      pdf: { name: "carousel.pdf", sha256: "b".repeat(64), bytes: 100, url: "u" },
+      cover: { name: "cover.jpg", sha256: "c".repeat(64), bytes: 100, url: "u" },
+      slides: Array.from({ length: 8 }, (_, i) => ({ name: `slide-${i}.png`, sha256: "d".repeat(64), bytes: 100, url: "u" }))
+    }
+  };
+}
+
+test("validateStoredManifest accepts dark-editorial v1 and v2 manifests", () => {
+  assert.doesNotThrow(() => validateStoredManifest(storedManifest({ family: "dark-editorial", version: 1 })));
+  assert.doesNotThrow(() => validateStoredManifest(storedManifest({ family: "dark-editorial", version: 2 })));
+});
+
+test("validateStoredManifest rejects unknown style versions and families", () => {
+  assert.throws(() => validateStoredManifest(storedManifest({ family: "dark-editorial", version: 3 })), /style must be dark-editorial/);
+  assert.throws(() => validateStoredManifest(storedManifest({ family: "light-editorial", version: 2 })), /style must be dark-editorial/);
 });
