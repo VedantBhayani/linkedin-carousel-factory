@@ -3,7 +3,7 @@ import test from "node:test";
 import { runWorker } from "../../src/worker/run-worker.js";
 import { createFakeQueue, createFakeRenderer, createFakeAssetStore, createFakeDraftService, createTestClock } from "../helpers/fake-adapters.js";
 
-const style = { family: "dark-editorial", accent: "electric-blue", density: "low" };
+const style = { family: "dark-editorial", accent: "editorial-purple", density: "low" };
 const slides = Array.from({ length: 8 }, (_, i) => ({ layout: "statement", headline: `Slide ${i + 1}` }));
 
 function payloadBytes(jobId) {

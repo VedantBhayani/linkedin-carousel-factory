@@ -5,8 +5,8 @@ import { WorkerError } from "../../src/worker/errors.js";
 import { createFakeQueue, createFakePayloadStore, createFakeRenderer, createFakeAssetStore, createFakeDraftService, createTestClock, createWorkerId } from "../helpers/fake-adapters.js";
 import { renderCarousel } from "../../src/render.js";
 
-const driveBytes = new TextEncoder().encode(JSON.stringify({ jobId: "job-1", title: "Test", style: { family: "dark-editorial", accent: "electric-blue", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
-const driveBytesTest001 = new TextEncoder().encode(JSON.stringify({ jobId: "test-001", title: "Test", style: { family: "dark-editorial", accent: "electric-blue", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
+const driveBytes = new TextEncoder().encode(JSON.stringify({ jobId: "job-1", title: "Test", style: { family: "dark-editorial", accent: "editorial-purple", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
+const driveBytesTest001 = new TextEncoder().encode(JSON.stringify({ jobId: "test-001", title: "Test", style: { family: "dark-editorial", accent: "editorial-purple", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}`, accentText: "Test" })) }));
 
 function makePorts({ queue, payload, renderer, assets, drafts }) {
   return {
@@ -121,7 +121,7 @@ test("wrong filename fails without rendering", async () => {
 });
 
 test("mismatched jobId in JSON fails without rendering", async () => {
-  const mismatchedBytes = new TextEncoder().encode(JSON.stringify({ jobId: "different-job", title: "Test", style: { family: "dark-editorial", accent: "electric-blue", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}` })) }));
+  const mismatchedBytes = new TextEncoder().encode(JSON.stringify({ jobId: "different-job", title: "Test", style: { family: "dark-editorial", accent: "editorial-purple", density: "low" }, slides: Array.from({ length: 8 }, (_, i) => ({ layout: "editorial-hook", headline: `Slide ${i + 1}` })) }));
   
   const job = { jobId: "job-1", rowId: "Sheet1!2", status: "carousel_created", carouselFile: "https://drive.google.com/job-1-carousel-v1.json", renderAttempts: 0, draftAttempts: 0, lockedAt: "", workerId: "", renderManifest: "", bufferDraftId: "", bufferDraftUrl: "", error: "", updatedAt: new Date().toISOString(), postText: "post" };
   
